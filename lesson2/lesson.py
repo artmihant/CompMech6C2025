@@ -205,26 +205,17 @@ def verlet2_method(u0, v0, dt, n_steps):
 
     return u, v
 
-def leapfrog_method(u0, v0, dt, n_steps):
-
-    u = np.zeros((n_steps, 1))
-    v = np.zeros((n_steps, 1))
-
-    # TODO
-
-    return u, v
-
 # =============================================================================
 # Решение задачами всеми методами
 # =============================================================================
 
 # Аналитическое решение
 u_analytic, v_analytic = analytical_method(u0, v0, dt, n_steps)
-energy_analytic = energy(u_analytic, v_analytic)
+e_analytic = energy(u_analytic, v_analytic)
 
-print(f"Начальная энергия (аналитическое решение): {energy_analytic[0]:.6f} Дж")
-print(f"Конечная энергия (аналитическое решение): {energy_analytic[-1]:.6f} Дж")
-print(f"Изменение энергии: {energy_analytic[-1] - energy_analytic[0]:.6f} Дж")
+print(f"Начальная энергия (аналитическое решение): {e_analytic[0]:.6f} Дж")
+print(f"Конечная энергия (аналитическое решение): {e_analytic[-1]:.6f} Дж")
+print(f"Изменение энергии: {e_analytic[-1] - e_analytic[0]:.6f} Дж")
 print(f"Коэффициент затухания: {b/(2*m):.3f} 1/с")
 
 omega0 = np.sqrt(k/m)
@@ -240,8 +231,8 @@ u_verlet2, v_verlet2 = verlet2_method(u0, v0, dt, n_steps)
 e_verlet2 = energy(u_verlet2, v_verlet2)
 
 # Решение методом Leapfrog с одним вычислением ускорения (эффективный вариант)
-u_leapfrog, v_leapfrog = leapfrog_method(u0, v0, dt, n_steps)
-e_leapfrog = energy(u_leapfrog, v_leapfrog)
+u_verlet2, v_verlet2 = verlet2_method(u0, v0, dt, n_steps)
+e_verlet2 = energy(u_verlet2, v_verlet2)
 
 # Решение методом Рунге-Кутты 2 порядка
 u_rk2, v_rk2 = rk2_method(u0, v0, dt, n_steps)
@@ -280,9 +271,9 @@ plot_data = [
     {
         'label': 'Leapfrog',
         'color': 'cyan',
-        'u': u_leapfrog,
-        'v': v_leapfrog,
-        'e': e_leapfrog
+        'u': u_verlet2,
+        'v': v_verlet2,
+        'e': e_verlet2
     },
     {
         'label': 'Метод RK4',
@@ -331,7 +322,7 @@ plot_data = [
         'color': 'green',
         'u': u_analytic,
         'v': v_analytic,
-        'e': energy_analytic
+        'e': e_analytic
     }
 ]
 
