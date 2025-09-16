@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 r"""
-Моделирование затухающего гармонического осциллятора численными методами
+# Численные методы решения ОДУ на примере затухающего гармонического осциллятора
 
-В этом скрипте мы реализуем и сравним восемь численных методов интегрирования:
+На этом занятии мы реализуем и сравним ряд численных методов интегрирования:
 - Метод Leapfrog (симплектический, адаптированный для диссипативных систем)
 - Метод Рунге-Кутты 4 порядка (явный одношаговый метод)
 - Метод Адамса-Бэшфорта 4 порядка (явный многошаговый метод)
@@ -16,25 +15,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import pi
 import matplotlib.animation as animation
-from IPython.display import HTML
+from scipy.optimize import fsolve
 
-# =============================================================================
-# Физические параметры и начальные условия
-# =============================================================================
+from oscillator_plots import plots
 
-# -----------------------------------------------------------------------------
-# Формула гармонического осциллятора:
-# 
-# Уравнение движения:
-# $$ m\ddot{x} + b\dot{x} + kx = 0 $$
-# 
-# где:
-# - $m$ — масса,
-# - $b$ — коэффициент трения,
-# - $k$ — жесткость пружины,
-# - $x$ — смещение.
-# -----------------------------------------------------------------------------
+r"""
+## Уравнение гармонического осциллятора
 
+$$ m\ddot{u} + b\dot{u} + ku = 0 $$
+
+где:
+- $m$ — масса,
+- $b$ — коэффициент трения,
+- $k$ — жесткость пружины,
+- $u$ — смещение.
+"""
 
 # Физические параметры гармонического осциллятора
 m = 1.0   # масса, кг
@@ -42,7 +37,7 @@ k = 1000.0  # жесткость пружины, Н/м
 b = 0.0  # коэффициент трения, кг/с
 
 # Начальные условия
-x0 = 0.5   # начальное смещение, м
+u0 = 0.5   # начальное смещение, м
 v0 = 0.0   # начальная скорость, м/с
 
 # Параметры интегрирования
@@ -56,15 +51,11 @@ t = np.arange(0, T, dt)
 print(f"Число шагов: {n_steps}")
 print(f"Время моделирования: {T} с")
 print(f"Шаг интегрирования: {dt} с")
-print(f"Начальное смещение: {x0:.3f} м")
+print(f"Начальное смещение: {u0:.3f} м")
 print(f"Начальная скорость: {v0:.3f} м/с")
 print(f"Масса: {m:.1f} кг")
 print(f"Жесткость пружины: {k:.1f} Н/м")
 print(f"Коэффициент трения: {b:.1f} кг/с")
-
-# =============================================================================
-# Функции для расчета энергии и аналитического решения
-# =============================================================================
 
 def energy(x, v):
     """
@@ -83,67 +74,60 @@ def energy(x, v):
     K = 0.5 * m * v**2
     return U + K
 
-def analytical_solution(x0, v0, dt, n_steps):
+def analytical_method(u0, v0, dt, n_steps):
     """
     Аналитическое решение для затухающего гармонического осциллятора
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг времени
         n_steps: число шагов
 
     Returns:
-        x_analytical: массив смещений
+        u_analytical: массив положений
         v_analytical: массив скоростей
     """
 
+    T = n_steps*dt
     # Параметры затухающего осциллятора
-    omega0 = np.sqrt(k / m)  # собственная частота
+    omega = np.sqrt(k / m)  # собственная частота
     gamma = b / (2 * m)      # коэффициент затухания
 
     # Определяем тип колебаний
-    discriminant = omega0**2 - gamma**2
+    discriminant = omega**2 - gamma**2
 
     t = np.arange(0, T, dt)
 
     if discriminant > 0:  # Недозатухающий режим
         omega = np.sqrt(discriminant)
-        A = x0
-        B = (v0 + gamma * x0) / omega
+        A = u0
+        B = (v0 + gamma * u0) / omega
 
-        x = np.exp(-gamma * t) * (A * np.cos(omega * t) + B * np.sin(omega * t))
+        u = np.exp(-gamma * t) * (A * np.cos(omega * t) + B * np.sin(omega * t))
         v = np.exp(-gamma * t) * ((-gamma * A - omega * B) * np.cos(omega * t) +
                                   (-gamma * B + omega * A) * np.sin(omega * t))
 
     elif discriminant < 0:  # Перезагужающий режим
         alpha = np.sqrt(-discriminant)
-        A = x0
-        B = (v0 + gamma * x0) / alpha
+        A = u0
+        B = (v0 + gamma * u0) / alpha
 
-        x = np.exp(-gamma * t) * (A * np.cosh(alpha * t) + B * np.sinh(alpha * t))
+        u = np.exp(-gamma * t) * (A * np.cosh(alpha * t) + B * np.sinh(alpha * t))
         v = np.exp(-gamma * t) * ((-gamma * A - alpha * B) * np.cosh(alpha * t) +
                                   (-gamma * B + alpha * A) * np.sinh(alpha * t))
 
     else:  # Критическое затухание
-        A = x0
-        B = v0 + gamma * x0
+        A = u0
+        B = v0 + gamma * u0
 
-        x = np.exp(-gamma * t) * (A + B * t)
+        u = np.exp(-gamma * t) * (A + B * t)
         v = np.exp(-gamma * t) * (-gamma * A - gamma * B * t + B)
 
-    return x, v
+    return u, v
 
-# =============================================================================
-# Численные методы интегрирования
-# =============================================================================
-
-
-# -----------------------------------------------------------------------------
-# Метод Рунге-Кутты 2 порядка
-# -----------------------------------------------------------------------------
 r"""
-## Метод Рунге-Кутты 2 порядка
+## Метод Рунге-Кутты
 
 ### Физическое описание системы
 
@@ -152,10 +136,10 @@ r"""
 $$\frac{d\vec{Y}}{dt} = \vec{F}(\vec{Y})$$
 
 где вектор состояния:
-$$\vec{Y} = \begin{pmatrix}x \\ v \end{pmatrix}$$
+$$\vec{Y} = \begin{pmatrix}u \\ v \end{pmatrix}$$
 
 а векторная функция:
-$$\vec{F}(\vec{Y}) = \begin{pmatrix} v \\ -\frac{k}{m} x - \frac{b}{m} v \end{pmatrix}$$
+$$\vec{F}(\vec{Y}) = \begin{pmatrix} v \\ -\frac{k}{m} u - \frac{b}{m} v \end{pmatrix}$$
 
 ### Метод средней точки (RK2)
 
@@ -169,41 +153,33 @@ $$\vec{F}(\vec{Y}) = \begin{pmatrix} v \\ -\frac{k}{m} x - \frac{b}{m} v \end{pm
 
 3. **Итоговое обновление:**
    $$\vec{Y}_{n+1} = \vec{Y}_n + \frac{\vec{k}_1 + \vec{k}_2}{2} \cdot \Delta t$$
-
-### В компонентной форме:
-
-$$\vec{k}_1 = \begin{pmatrix} v_n \\ -\frac{k}{m} x_n - \frac{b}{m} v_n \end{pmatrix}$$
-
-$$\vec{k}_2 = \begin{pmatrix} v_n + k_{1,v} \cdot \frac{\Delta t}{2} \\ -\frac{k}{m} (x_n + k_{1,x} \cdot \frac{\Delta t}{2}) - \frac{b}{m} (v_n + k_{1,v} \cdot \frac{\Delta t}{2}) \end{pmatrix}$$
-
-$$\vec{Y}_{n+1} = \vec{Y}_n + \frac{\vec{k}_1 + \vec{k}_2}{2} \cdot \Delta t$$"""
+"""
 
 def func_f(y):
     """ Функция изменения для затухающего гармонического осциллятора, принимает np.array(shape=2)"""
-    x, v = y
+    u, v = y
     return np.array([
         v,
-        -(k / m) * x - (b / m) * v,
+        -(k / m) * u - (b / m) * v,
     ])
 
-
-def rk2_method(x0, v0, dt, n_steps):
+def rk2_method(u0, v0, dt, n_steps):
     """
     Метод Рунге-Кутты 2 порядка для гармонического осциллятора
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
     y_state = np.zeros((n_steps, 2))
 
-    y_state[0] = [x0, v0]
+    y_state[0] = [u0, v0]
 
     for i in range(n_steps - 1):
         k1 = func_f(y_state[i])
@@ -211,28 +187,27 @@ def rk2_method(x0, v0, dt, n_steps):
         y_state[i+1] = y_state[i] + (k1 + k2) * dt / 2
 
     # Извлекаем смещение и скорость из состояния
-    x = y_state[:, 0]
+    u = y_state[:, 0]
     v = y_state[:, 1]
-    return x, v
+    return u, v
 
-
-def rk4_method(x0, v0, dt, n_steps):
+def rk4_method(u0, v0, dt, n_steps):
     """
     Метод Рунге-Кутты 4 порядка для гармонического осциллятора
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
     y_state = np.zeros((n_steps, 2))
 
-    y_state[0] = [x0, v0]
+    y_state[0] = [u0, v0]
 
     for i in range(n_steps - 1):
         k1 = func_f(y_state[i])
@@ -243,28 +218,57 @@ def rk4_method(x0, v0, dt, n_steps):
         y_state[i+1] = y_state[i] + (k1 + 2*k2 + 2*k3 + k4) * dt / 6
 
     # Извлекаем смещение и скорость из состояния
-    x = y_state[:, 0]
+    u = y_state[:, 0]
     v = y_state[:, 1]
-    return x, v
+    return u, v
 
-def adams2_method(x0, v0, dt, n_steps):
+r"""
+## Метод Адамса-Бэшфорта
+
+### Многошаговые методы - концепция экстраполяции вперед
+
+В отличие от одношаговых методов Рунге-Кутты, многошаговые методы Адамса-Бэшфорта используют **историю предыдущих шагов** для построения более точной аппроксимации производной.
+
+**Основная идея**: Если мы знаем значения производной в нескольких предыдущих точках, мы можем экстраполировать её поведение вперед.
+
+Метод использует линейную экстраполяцию производной на основе двух предыдущих точек:
+
+**Экстраполяционная формула:**
+$$\vec{F}_{n+1/2} \approx \frac{3}{2} \vec{F}_n - \frac{1}{2} \vec{F}_{n-1}$$
+
+**Итоговое обновление:**
+$$\vec{Y}_{n+1} = \vec{Y}_n + \frac{\Delta t}{2} \cdot \left(3\vec{F}_n - \vec{F}_{n-1}\right)$$
+
+### Геометрическая интерпретация
+
+Метод строит параболу через три точки производной (n-1, n, n+1) и использует её для предсказания следующего значения. В 2-порядковой версии используется только линейная экстраполяция.
+
+### Особенности реализации
+
+1. **Запуск метода**: Требуется минимум один предыдущий шаг
+2. **Устойчивость**: Метод может быть неустойчивым для жестких систем
+3. **Эффективность**: Более эффективен при фиксированной точности по сравнению с RK2
+4. **Точность**: 2-й порядок точности при условии гладкости решения
+"""
+
+def explicit_adams2_method(u0, v0, dt, n_steps):
     """
     Метод Адамса-Бэшфорта 2-го порядка для гармонического осциллятора
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
     y_state = np.zeros((n_steps, 2))
     f_history = np.zeros((n_steps, 2))  # история производных
 
-    y_state[0] = [x0, v0]
+    y_state[0] = [u0, v0]
     f_history[0] = func_f(y_state[0])
 
     # Для старта метода Адамса нужен 1 предыдущий шаг
@@ -286,28 +290,28 @@ def adams2_method(x0, v0, dt, n_steps):
         f_history[i+1] = func_f(y_state[i+1])
 
     # Извлекаем смещение и скорость из состояния
-    x = y_state[:, 0]
+    u = y_state[:, 0]
     v = y_state[:, 1]
-    return x, v
+    return u, v
 
-def adams4_method(x0, v0, dt, n_steps):
+def explicit_adams4_method(u0, v0, dt, n_steps):
     """
     Метод Адамса-Бэшфорта 4-го порядка для гармонического осциллятора
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
     y_state = np.zeros((n_steps, 2))
     f_history = np.zeros((n_steps, 2))  # история производных
 
-    y_state[0] = [x0, v0]
+    y_state[0] = [u0, v0]
     f_history[0] = func_f(y_state[0])
 
     # Для старта метода Адамса нужны 3 предыдущие точки
@@ -334,31 +338,69 @@ def adams4_method(x0, v0, dt, n_steps):
         f_history[i+1] = func_f(y_state[i+1])
 
     # Извлекаем смещение и скорость из состояния
-    x = y_state[:, 0]
+    u = y_state[:, 0]
     v = y_state[:, 1]
-    return x, v
+    return u, v
 
-def adams_moulton2_method(x0, v0, dt, n_steps):
+r"""
+## Неявный метод Адамса-Моултона  (метод трапеций)
+
+### Неявные методы - концепция интерполяции назад
+
+В отличие от явных методов Адамса-Бэшфорта, неявные методы Адамса-Моултона используют **интерполяцию назад**, включая в расчет производную в искомой точке n+1.
+
+**Основная идея**: Построить интерполяционный полином, проходящий через известные точки производной, и использовать его для получения значения в будущей точке.
+
+Метод трапеций является простейшим неявным методом и использует линейную интерполяцию производной:
+
+**Интерполяционная формула:**
+$$\vec{F}(t) \approx \vec{F}_n + \frac{\vec{F}_{n+1} - \vec{F}_n}{\Delta t} \cdot (t - t_n)$$
+
+**Интегрирование от n до n+1:**
+$$\vec{Y}_{n+1} = \vec{Y}_n + \int_{t_n}^{t_{n+1}} \vec{F}(t) \, dt \approx \vec{Y}_n + \frac{\Delta t}{2} \cdot (\vec{F}_n + \vec{F}_{n+1})$$
+
+### Схема предиктор-корректор
+
+Поскольку метод неявный, используется двухшаговая процедура:
+
+1. **Предиктор**: Получаем грубую оценку следующего состояния
+2. **Корректор**: Решаем нелинейное уравнение для точного значения
+
+**Неявное уравнение:**
+$$\vec{Y}_{n+1} - \vec{Y}_n - \frac{\Delta t}{2} \cdot (\vec{F}_n + \vec{F}(\vec{Y}_{n+1})) = 0$$
+
+### Геометрическая интерпретация
+
+Метод эквивалентен интегрированию под трапецией, построенной на значениях производной в точках n и n+1. Это обеспечивает более высокую точность по сравнению с явными методами.
+
+### Особенности реализации
+
+1. **Устойчивость**: Абсолютно устойчив для линейных систем
+2. **Точность**: 2-й порядок точности, но выше устойчивость
+3. **Вычислительная сложность**: Требует решения нелинейного уравнения на каждом шаге
+4. **Сходимость**: Гарантирована для широкого класса задач
+"""
+
+def implicit_adams2_method(u0, v0, dt, n_steps):
     """
     Неявный метод Адамса-Моултона 2-го порядка для гармонического осциллятора
     (метод трапеций)
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
-    from scipy.optimize import fsolve
 
     y_state = np.zeros((n_steps, 2))
     f_history = np.zeros((n_steps, 2))  # история производных
 
-    y_state[0] = [x0, v0]
+    y_state[0] = [u0, v0]
     f_history[0] = func_f(y_state[0])
 
     # Применяем неявный метод Адамса-Моултона 2-го порядка с самого начала
@@ -382,22 +424,22 @@ def adams_moulton2_method(x0, v0, dt, n_steps):
         f_history[i+1] = func_f(y_state[i+1])
 
     # Извлекаем смещение и скорость из состояния
-    x = y_state[:, 0]
+    u = y_state[:, 0]
     v = y_state[:, 1]
-    return x, v
+    return u, v
 
-def adams_moulton4_method(x0, v0, dt, n_steps):
+def implicit_adams4_method(u0, v0, dt, n_steps):
     """
     Неявный метод Адамса-Моултона 4-го порядка для гармонического осциллятора
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
     from scipy.optimize import fsolve
@@ -405,7 +447,7 @@ def adams_moulton4_method(x0, v0, dt, n_steps):
     y_state = np.zeros((n_steps, 2))
     f_history = np.zeros((n_steps, 2))  # история производных
 
-    y_state[0] = [x0, v0]
+    y_state[0] = [u0, v0]
     f_history[0] = func_f(y_state[0])
 
     # Для старта метода Адамса нужны 3 предыдущие точки
@@ -445,13 +487,11 @@ def adams_moulton4_method(x0, v0, dt, n_steps):
         f_history[i+1] = func_f(y_state[i+1])
 
     # Извлекаем смещение и скорость из состояния
-    x = y_state[:, 0]
+    u = y_state[:, 0]
     v = y_state[:, 1]
-    return x, v    
+    return u, v    
 
-# -----------------------------------------------------------------------------
-# Метод Leapfrog
-# -----------------------------------------------------------------------------
+
 r"""
 ## Метод Leapfrog (симплектический метод чередования сетки)
 
@@ -460,8 +500,8 @@ r"""
 Метод Leapfrog основан на концепции **чередования сетки** с состояниями на целом и полуцелом шагах:
 
 **Состояния на целом шаге (n, n+1, ...):**
-- Смещение x_n
-- Ускорение a_n = -(k/m) x_n
+- Смещение u_n
+- Ускорение a_n = -(k/m) u_n
 
 **Состояния на полуцелом шаге (n+1/2, n+3/2, ...):**
 - Скорость v_{n+1/2}
@@ -469,7 +509,7 @@ r"""
 ### Расширенное векторное представление
 
 **Вектор положения (на целом шаге):**
-$$\vec{Y}_n = \begin{pmatrix} x_n \end{pmatrix}$$
+$$\vec{Y}_n = \begin{pmatrix} u_n \end{pmatrix}$$
 
 **Вектор скорости (на полуцелом шаге):**
 $$\vec{V}_{n+1/2} = \begin{pmatrix} v_{n+1/2} \end{pmatrix}$$
@@ -508,7 +548,7 @@ def func_v(u, v_current=None):
         # С трением (диссипативный случай)
         return np.array([-(k / m) * x - (b / m) * v_current])
 
-def verlet2_method(x0, v0, dt, n_steps):
+def verlet2_method(u0, v0, dt, n_steps):
     """
     Метод Leapfrog 2-го порядка для гармонического осциллятора
     (Velocity Verlet - эквивалентная форма)
@@ -521,20 +561,20 @@ def verlet2_method(x0, v0, dt, n_steps):
     Для сравнения: одно вычисление дает порядок O(h), два вычисления дают O(h²).
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
 
     u_state = np.zeros((n_steps, 1))  # положение [x]
     v_state = np.zeros((n_steps, 1))  # скорость [v]
 
-    u_state[0] = [x0]
+    u_state[0] = [u0]
     v_state[0] = [v0]
 
     # Первое вычисление ускорения
@@ -559,7 +599,7 @@ def verlet2_method(x0, v0, dt, n_steps):
     v = v_state[:, 0]
     return x, v
 
-def leapfrog_method(x0, v0, dt, n_steps):
+def leapfrog_method(u0, v0, dt, n_steps):
     """
     Модифицированный Leapfrog с ОДНИМ вычислением ускорения за цикл
     (приближение 1-го порядка, но очень эффективное)
@@ -570,13 +610,13 @@ def leapfrog_method(x0, v0, dt, n_steps):
     - Полезно для очень эффективных симуляций
 
     Args:
-        x0: начальное смещение, м
+        u0: начальное положение, м
         v0: начальная скорость, м/с
         dt: шаг интегрирования, с
         n_steps: число шагов
 
     Returns:
-        x: массив смещений
+        u: массив положений
         v: массив скоростей
     """
 
@@ -584,7 +624,7 @@ def leapfrog_method(x0, v0, dt, n_steps):
     v_state = np.zeros((n_steps, 1))  # скорость [v]
     v_half_state = np.zeros((n_steps, 1)) # скорость на полуцелом шаге
 
-    u_state[0] = [x0]
+    u_state[0] = [u0]
     v_state[0] = [v0]
 
     v_half_state[0] = v_state[0] + func_v(u_state[0], v_state[0][0]) * dt / 2
@@ -601,14 +641,13 @@ def leapfrog_method(x0, v0, dt, n_steps):
     v = v_state[:, 0]
     return x, v
 
-
 # =============================================================================
 # Решение задачами всеми методами
 # =============================================================================
 
 # Аналитическое решение
-x_analytic, v_analytic = analytical_solution(x0, v0, dt, n_steps)
-energy_analytic = energy(x_analytic, v_analytic)
+u_analytic, v_analytic = analytical_method(u0, v0, dt, n_steps)
+energy_analytic = energy(u_analytic, v_analytic)
 
 print(f"Начальная энергия (аналитическое решение): {energy_analytic[0]:.6f} Дж")
 print(f"Конечная энергия (аналитическое решение): {energy_analytic[-1]:.6f} Дж")
@@ -624,36 +663,36 @@ else:
     print("Система находится в апериодическом режиме (критическое или перекритическое затухание)")
 
 # Решение методом Leapfrog (2-го порядка, два вычисления ускорения)
-x_verlet2, v_verlet2 = verlet2_method(x0, v0, dt, n_steps)
-energy_verlet2 = energy(x_verlet2, v_verlet2)
+u_verlet2, v_verlet2 = verlet2_method(u0, v0, dt, n_steps)
+energy_verlet2 = energy(u_verlet2, v_verlet2)
 
 # Решение методом Leapfrog с одним вычислением ускорения (эффективный вариант)
-x_leapfrog, v_leapfrog = leapfrog_method(x0, v0, dt, n_steps)
-energy_leapfrog = energy(x_leapfrog, v_leapfrog)
+u_leapfrog, v_leapfrog = leapfrog_method(u0, v0, dt, n_steps)
+energy_leapfrog = energy(u_leapfrog, v_leapfrog)
 
 # Решение методом Рунге-Кутты 2 порядка
-x_rk2, v_rk2 = rk2_method(x0, v0, dt, n_steps)
-energy_rk2 = energy(x_rk2, v_rk2)
+u_rk2, v_rk2 = rk2_method(u0, v0, dt, n_steps)
+energy_rk2 = energy(u_rk2, v_rk2)
 
 # Решение методом Рунге-Кутты 4 порядка
-x_rk4, v_rk4 = rk4_method(x0, v0, dt, n_steps)
-energy_rk4 = energy(x_rk4, v_rk4)
+u_rk4, v_rk4 = rk4_method(u0, v0, dt, n_steps)
+energy_rk4 = energy(u_rk4, v_rk4)
 
 # Решение методом Адамса 2-го порядка
-x_adams2, v_adams2 = adams2_method(x0, v0, dt, n_steps)
-energy_adams2 = energy(x_adams2, v_adams2)
+u_adams2, v_adams2 = explicit_adams2_method(u0, v0, dt, n_steps)
+energy_adams2 = energy(u_adams2, v_adams2)
 
 # Решение методом Адамса 4-го порядка
-x_adams4, v_adams4 = adams4_method(x0, v0, dt, n_steps)
-energy_adams4 = energy(x_adams4, v_adams4)
+u_adams4, v_adams4 = explicit_adams4_method(u0, v0, dt, n_steps)
+energy_adams4 = energy(u_adams4, v_adams4)
 
 # Решение методом Адамса-Моултона 2-го порядка (неявный)
-x_adams_moulton2, v_adams_moulton2 = adams_moulton2_method(x0, v0, dt, n_steps)
-energy_adams_moulton2 = energy(x_adams_moulton2, v_adams_moulton2)
+u_adams_moulton2, v_adams_moulton2 = implicit_adams2_method(u0, v0, dt, n_steps)
+energy_adams_moulton2 = energy(u_adams_moulton2, v_adams_moulton2)
 
 # Решение методом Адамса-Моултона 4-го порядка (неявный)
-x_adams_moulton4, v_adams_moulton4 = adams_moulton4_method(x0, v0, dt, n_steps)
-energy_adams_moulton4 = energy(x_adams_moulton4, v_adams_moulton4)
+u_adams_moulton4, v_adams_moulton4 = implicit_adams4_method(u0, v0, dt, n_steps)
+energy_adams_moulton4 = energy(u_adams_moulton4, v_adams_moulton4)
 
 
 # Подготавливаем данные для графиков
@@ -661,134 +700,69 @@ plot_data = [
     {
         'label': 'verlet2',
         'color': 'blue',
-        'x': x_verlet2,
+        'u': u_verlet2,
         'v': v_verlet2,
         'e': energy_verlet2
     },
     {
         'label': 'Leapfrog',
         'color': 'cyan',
-        'x': x_leapfrog,
+        'u': u_leapfrog,
         'v': v_leapfrog,
         'e': energy_leapfrog
     },
     # {
     #     'label': 'Метод RK4',
     #     'color': 'orange',
-    #     'x': x_rk4,
+    #     'u': u_rk4,
     #     'v': v_rk4,
     #     'e': energy_rk4
     # },
     {
         'label': 'RK2',
         'color': 'orange',
-        'x': x_rk2,
+        'u': u_rk2,
         'v': v_rk2,
         'e': energy_rk2
     },    
     # {
     #     'label': 'Адамс-2',
     #     'color': 'purple',
-    #     'x': x_adams2,
+    #     'u': u_adams2,
     #     'v': v_adams2,
     #     'e': energy_adams2
     # },
     {
         'label': 'Метод Адамса-4',
         'color': 'brown',
-        'x': x_adams4,
+        'u': u_adams4,
         'v': v_adams4,
         'e': energy_adams4
     },
     {
         'label': 'Адамса-Моултона-2',
         'color': 'magenta',
-        'x': x_adams_moulton2,
+        'u': u_adams_moulton2,
         'v': v_adams_moulton2,
         'e': energy_adams_moulton2
     },
     # {
     #     'label': 'Метод Адамса-Моултона-4',
     #     'color': 'cyan',
-    #     'x': x_adams_moulton4,
+    #     'u': u_adams_moulton4,
     #     'v': v_adams_moulton4,
     #     'e': energy_adams_moulton4
     # },
     {
         'label': 'Аналитическое',
         'color': 'green',
-        'x': x_analytic,
+        'u': u_analytic,
         'v': v_analytic,
         'e': energy_analytic
     }
 ]
 
-
-
-def create_comparison_plots(t, data_list, title="Сравнение методов"):
-    """
-    Создает графики сравнения методов интегрирования для осциллятора
-
-    Args:
-        t: массив времени
-        data_list: список словарей с данными методов
-                   каждый словарь содержит: 'label', 'color', 'x', 'v', 'e'
-        title: заголовок фигуры
-
-    Returns:
-        fig, axes: фигура и массив осей matplotlib
-    """
-
-    for data in data_list:
-        print(f"\nНачальная энергия (метод {data['label']}): {data['e'][0]:.6f} Дж")
-        print(f"Конечная энергия (метод {data['label']}): {data['e'][-1]:.6f} Дж")
-        print(f"Изменение энергии: {data['e'][-1] - data['e'][0]:.6f} Дж")
-        print(f"Относительное изменение: {((data['e'][-1] - data['e'][0])/data['e'][0]*100):.3f}%")
-
-
-    # Создаем фигуру с подграфиками
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle(title, fontsize=16)
-
-    # 1. Смещение как функция времени
-    for data in data_list:
-        linestyle = '--' if 'Аналитическое' in data['label'] else '-'
-        axes[0, 0].plot(t, data['x'], label=data['label'], linewidth=2,
-                       color=data['color'], linestyle=linestyle)
-    axes[0, 0].set_xlabel('Время, с')
-    axes[0, 0].set_ylabel('Смещение, м')
-    axes[0, 0].set_title('Смещение осциллятора')
-    axes[0, 0].legend()
-    axes[0, 0].grid(True, alpha=0.3)
-
-    # 2. Фазовый портрет
-    for data in data_list:
-        linestyle = '--' if 'Аналитическое' in data['label'] else '-'
-        axes[0, 1].plot(data['x'], data['v'], label=data['label'], linewidth=2,
-                       color=data['color'], linestyle=linestyle)
-    axes[0, 1].set_xlabel('Смещение, м')
-    axes[0, 1].set_ylabel('Скорость, м/с')
-    axes[0, 1].set_title('Фазовый портрет')
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
-
-    # 3. Энергия
-    for data in data_list:
-        linestyle = '--' if 'Аналитическое' in data['label'] else '-'
-        axes[1, 0].plot(t, data['e'], label=data['label'], linewidth=2,
-                       color=data['color'], linestyle=linestyle)
-    axes[1, 0].set_xlabel('Время, с')
-    axes[1, 0].set_ylabel('Энергия, Дж')
-    axes[1, 0].set_title('Полная энергия')
-    axes[1, 0].legend()
-    axes[1, 0].grid(True, alpha=0.3)
-
-    # 4. Пустой subplot для анимации
-    axes[1, 1].axis('off')
-    axes[1, 1].set_title('Анимация осциллятора')
-
-    plt.tight_layout()
-    return fig, axes
+plots(t, T, plot_data)
 
 # =============================================================================
 # Сравнение методов - графики
@@ -800,141 +774,6 @@ r"""
 Теперь построим графики для сравнения методов второго порядка.
 """
 
-
-
-# Создаем графики
-fig, axes = create_comparison_plots(t, plot_data, 'Сравнение методов второго порядка для затухающего осциллятора')
-
-# 4. Анимация пружинного осциллятора для всех трех методов в четвертом subplot
-
-# Настройка четвертого subplot для анимации
-ax_anim = axes[1, 1]
-# Устанавливаем пределы - пружина будет от -1.5 до 1.5, с запасом
-max_displacement = 1.5
-ax_anim.set_xlim(-max_displacement, max_displacement)
-ax_anim.set_ylim(-0.5, 0.5)
-ax_anim.set_aspect('equal')
-ax_anim.grid(True, alpha=0.3)
-ax_anim.set_title('Анимация пружинных осцилляторов')
-
-# Фиксированная стенка слева
-ax_anim.plot([-max_displacement, -max_displacement], [-0.2, 0.2], 'k-', lw=4)
-ax_anim.text(-max_displacement, 0.3, 'Стенка', ha='center', va='bottom')
-
-# Линии для каждого осциллятора (пружины + масса)
-spring_lines = []
-mass_lines = []
-
-# Используем цвета из plot_data
-for data in plot_data:
-    # Пружина (будет состоять из нескольких сегментов)
-    spring_line, = ax_anim.plot([], [], '-', lw=2, color=data['color'], label=data['label'])
-    # Масса (квадратик на конце пружины)
-    mass_line, = ax_anim.plot([], [], 's-', markersize=12, color=data['color'], markerfacecolor=data['color'])
-    spring_lines.append(spring_line)
-    mass_lines.append(mass_line)
-
-ax_anim.legend()
-
-# Текст для энергии
-energy_text = ax_anim.text(0.02, 0.98, '', transform=ax_anim.transAxes,
-                          verticalalignment='top', fontsize=8,
-                          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-
-
-def animate_pendulums(frame):
-    """Функция анимации для обновления пружинных осцилляторов в subplot"""
-    energy_info = []
-    methods_data = [(data['x'], data['v'], data['label']) for data in plot_data]
-
-    for i, (x, v, label) in enumerate(methods_data):
-        # Позиция массы
-        mass_x = x[frame]
-        mass_y = 0  # масса движется горизонтально
-
-        # Создаем пружину как серию зигзагов
-        wall_x = -max_displacement  # позиция стенки
-        spring_length = mass_x - wall_x
-        n_coils = 8  # количество витков пружины
-
-        # Создаем точки пружины
-        spring_points_x = []
-        spring_points_y = []
-
-        for j in range(n_coils * 2 + 1):
-            # Распределяем точки вдоль пружины
-            fraction = j / (n_coils * 2)
-            x_pos = wall_x + fraction * spring_length
-
-            # Зигзаг пружины
-            if j % 2 == 0:
-                y_pos = 0  # центральная линия
-            else:
-                y_pos = 0.1 * (-1)**(j//2)  # зигзаг вверх-вниз
-
-            spring_points_x.append(x_pos)
-            spring_points_y.append(y_pos)
-
-        # Добавляем точку массы
-        spring_points_x.append(mass_x)
-        spring_points_y.append(mass_y)
-
-        # Обновляем пружину
-        spring_lines[i].set_data(spring_points_x, spring_points_y)
-
-        # Обновляем массу
-        mass_lines[i].set_data([mass_x], [mass_y])
-
-        # Информация об энергии
-        current_energy = energy(x[frame], v[frame])
-        energy_info.append('.4f'f'{label}: E = {current_energy:.4f} Дж')
-
-    energy_text.set_text('\n'.join(energy_info))
-
-    return spring_lines + mass_lines + [energy_text]
-
-def init_animation():
-    """Инициализация анимации"""
-    for spring_line in spring_lines:
-        spring_line.set_data([], [])
-    for mass_line in mass_lines:
-        mass_line.set_data([], [])
-    energy_text.set_text('')
-    return spring_lines + mass_lines + [energy_text]
-
-# Создаем анимацию в subplot
-print("\nСоздание анимации в subplot...")
-
-# Создание анимации для subplot
-fps = 20
-interval = 1000 / fps  # интервал в миллисекундах
-min_length = min(len(x_verlet2), len(x_rk2), len(x_analytic))
-frames = np.arange(0, min_length, max(1, min_length//(fps*T)))  # выбираем кадры для плавности
-
-anim = animation.FuncAnimation(
-    fig, animate_pendulums, init_func=init_animation,
-    frames=len(frames), interval=interval, blit=True
-)
-
-plt.tight_layout()
-plt.show()
-
-print("Анимация встроена в график! Для отображения в ноутбуке используйте:")
-print("HTML(anim.to_jshtml())")
-
-# =============================================================================
-# Анимация движения маятника
-# =============================================================================
-
-r"""
-## Анимация движения маятника
-
-Создадим анимации для демонстрации работы всех трех методов.
-"""
-
-# =============================================================================
-# Выводы и заключение
-# =============================================================================
 
 r"""
 ## Выводы
