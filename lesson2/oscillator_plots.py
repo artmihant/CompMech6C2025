@@ -182,7 +182,3 @@ def plots(t, T, plot_data):
 
     plt.tight_layout()
     plt.show()
-
-    print("Анимация встроена в график! Для отображения в ноутбуке используйте:")
-    print("HTML(anim.to_jshtml())")
-

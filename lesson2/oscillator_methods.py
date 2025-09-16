@@ -3,10 +3,9 @@ r"""
 
 На этом занятии мы реализуем и сравним ряд численных методов интегрирования:
 - Метод Leapfrog (симплектический, адаптированный для диссипативных систем)
-- Метод Рунге-Кутты 4 порядка (явный одношаговый метод)
-- Метод Адамса-Бэшфорта 4 порядка (явный многошаговый метод)
-- Метод Адамса-Моултона 2 порядка (неявный многошаговый метод)
-- Метод Адамса-Моултона 4 порядка (неявный многошаговый метод)
+- Метод Рунге-Кутты 2 и 4 порядка
+- Метод Адамса-Бэшфорта 2 и 4 порядка
+- Метод Адамса-Моултона 2 и 4 порядка
 
 Мы сравним их по точности и эффективности на примере затухающего гармонического осциллятора.
 """
@@ -42,7 +41,7 @@ v0 = 0.0   # начальная скорость, м/с
 
 # Параметры интегрирования
 T = 10.0          # время моделирования, с (уменьшили для жесткой системы)
-dt = 0.1      # шаг интегрирования, с (уменьшили для стабильности Адамса)
+dt = 0.01      # шаг интегрирования, с (уменьшили для стабильности Адамса)
 n_steps = int(T/dt)   # число шагов
 
 # Массив времени
@@ -225,7 +224,6 @@ def rk4_method(u0, v0, dt, n_steps):
 r"""
 ## Метод Адамса-Бэшфорта
 
-### Многошаговые методы - концепция экстраполяции вперед
 
 В отличие от одношаговых методов Рунге-Кутты, многошаговые методы Адамса-Бэшфорта используют **историю предыдущих шагов** для построения более точной аппроксимации производной.
 
@@ -344,8 +342,6 @@ def explicit_adams4_method(u0, v0, dt, n_steps):
 
 r"""
 ## Неявный метод Адамса-Моултона  (метод трапеций)
-
-### Неявные методы - концепция интерполяции назад
 
 В отличие от явных методов Адамса-Бэшфорта, неявные методы Адамса-Моултона используют **интерполяцию назад**, включая в расчет производную в искомой точке n+1.
 
@@ -529,6 +525,9 @@ $$\vec{V}_{n+1/2} = \begin{pmatrix} v_{n+1/2} \end{pmatrix}$$
 - Сохранение фазового объема
 - Стабильность при долгосрочном моделировании
 - Геометрическая точность в фазовом пространстве
+
+Метод дает точность, сопоставимую с RK3.
+
 """
 
 def func_u(v):
@@ -548,51 +547,9 @@ def func_v(u, v_current=None):
         # С трением (диссипативный случай)
         return np.array([-(k / m) * x - (b / m) * v_current])
 
-def verlet2_method(u0, v0, dt, n_steps):
-    """
-    Метод Leapfrog 2-го порядка для гармонического осциллятора
-
-    Args:
-        u0: начальное положение, м
-        v0: начальная скорость, м/с
-        dt: шаг интегрирования, с
-        n_steps: число шагов
-
-    Returns:
-        u: массив положений
-        v: массив скоростей
-    """
-
-    u_state = np.zeros((n_steps, 1))  # положение [x]
-    v_state = np.zeros((n_steps, 1))  # скорость [v]
-
-    u_state[0] = [u0]
-    v_state[0] = [v0]
-
-    # Первое вычисление ускорения
-    a_current = func_v(u_state[0], v_state[0][0])[0]
-
-    for i in range(n_steps - 1):
-        # 1. Обновляем положение: x_{n+1} = x_n + dt*v_n + (dt²/2)*a_n
-        u_state[i+1] = u_state[i] + v_state[i] * dt + 0.5 * a_current * dt**2
-
-        # 2. Вычисляем новое ускорение: a_{n+1} = a(x_{n+1}, v_{n+1/2})
-        v_half = v_state[i] + 0.5 * a_current * dt  # скорость в середине шага
-        a_next = func_v(u_state[i+1], v_half[0])[0]
-
-        # 3. Обновляем скорость: v_{n+1} = v_n + (dt/2)*(a_n + a_{n+1})
-        v_state[i+1] = v_state[i] + 0.5 * (a_current + a_next) * dt
-
-        # Сохраняем ускорение для следующего шага
-        a_current = a_next
-
-    x = u_state[:, 0]
-    v = v_state[:, 0]
-    return x, v
 
 def leapfrog_method(u0, v0, dt, n_steps):
     """
-    Другая реализация
     Args:
         u0: начальное положение, м
         v0: начальная скорость, м/с
@@ -646,11 +603,8 @@ if omega0 > gamma:
 else:
     print("Система находится в апериодическом режиме (критическое или перекритическое затухание)")
 
-# Решение методом Leapfrog (2-го порядка, два вычисления ускорения)
-u_verlet2, v_verlet2 = verlet2_method(u0, v0, dt, n_steps)
-energy_verlet2 = energy(u_verlet2, v_verlet2)
 
-# Решение методом Leapfrog с одним вычислением ускорения (эффективный вариант)
+# Решение методом Leapfrog
 u_leapfrog, v_leapfrog = leapfrog_method(u0, v0, dt, n_steps)
 energy_leapfrog = energy(u_leapfrog, v_leapfrog)
 
@@ -682,63 +636,56 @@ energy_adams_moulton4 = energy(u_adams_moulton4, v_adams_moulton4)
 # Подготавливаем данные для графиков
 plot_data = [
     {
-        'label': 'verlet2',
-        'color': 'blue',
-        'u': u_verlet2,
-        'v': v_verlet2,
-        'e': energy_verlet2
-    },
-    {
         'label': 'Leapfrog',
         'color': 'cyan',
         'u': u_leapfrog,
         'v': v_leapfrog,
         'e': energy_leapfrog
     },
-    # {
-    #     'label': 'Метод RK4',
-    #     'color': 'orange',
-    #     'u': u_rk4,
-    #     'v': v_rk4,
-    #     'e': energy_rk4
-    # },
-    # {
-    #     'label': 'RK2',
-    #     'color': 'orange',
-    #     'u': u_rk2,
-    #     'v': v_rk2,
-    #     'e': energy_rk2
-    # },    
-    # {
-    #     'label': 'Адамс-2',
-    #     'color': 'purple',
-    #     'u': u_adams2,
-    #     'v': v_adams2,
-    #     'e': energy_adams2
-    # },
-    # {
-    #     'label': 'Метод Адамса-4',
-    #     'color': 'brown',
-    #     'u': u_adams4,
-    #     'v': v_adams4,
-    #     'e': energy_adams4
-    # },
-    # {
-    #     'label': 'Адамса-Моултона-2',
-    #     'color': 'magenta',
-    #     'u': u_adams_moulton2,
-    #     'v': v_adams_moulton2,
-    #     'e': energy_adams_moulton2
-    # },
-    # {
-    #     'label': 'Метод Адамса-Моултона-4',
-    #     'color': 'cyan',
-    #     'u': u_adams_moulton4,
-    #     'v': v_adams_moulton4,
-    #     'e': energy_adams_moulton4
-    # },
     {
-        'label': 'Аналитическое',
+        'label': 'RK4',
+        'color': 'orange',
+        'u': u_rk4,
+        'v': v_rk4,
+        'e': energy_rk4
+    },
+    {
+        'label': 'RK2',
+        'color': 'orange',
+        'u': u_rk2,
+        'v': v_rk2,
+        'e': energy_rk2
+    },    
+    {
+        'label': 'Адамс-Бэшфорт-2',
+        'color': 'purple',
+        'u': u_adams2,
+        'v': v_adams2,
+        'e': energy_adams2
+    },
+    {
+        'label': 'Адамс-Бэшфорт-4',
+        'color': 'brown',
+        'u': u_adams4,
+        'v': v_adams4,
+        'e': energy_adams4
+    },
+    {
+        'label': 'Адамс-Моултон-2',
+        'color': 'magenta',
+        'u': u_adams_moulton2,
+        'v': v_adams_moulton2,
+        'e': energy_adams_moulton2
+    },
+    {
+        'label': 'Адамс-Моултон-4',
+        'color': 'cyan',
+        'u': u_adams_moulton4,
+        'v': v_adams_moulton4,
+        'e': energy_adams_moulton4
+    },
+    {
+        'label': 'Аналитика',
         'color': 'green',
         'u': u_analytic,
         'v': v_analytic,
