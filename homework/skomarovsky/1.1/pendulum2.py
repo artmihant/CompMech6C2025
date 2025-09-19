@@ -11,15 +11,18 @@ frequencies_count = 13
 w_first = 6.0
 w_last = 12.0
 w = np.linspace(w_first, w_last, frequencies_count)
+
+# w = w_first*2**(np.arange(frequencies_count)/(frequencies_count-1))
+
 L = g / w**2
 
 # Initial conditions: angle and angular velocity
 sol_0 = np.array((np.radians(90.0), np.radians(0)), dtype=np.float32)
 
 # Time mesh
-t_0 = 0.0
+t_0 = 0
 t_1 = 15
-N = 3600
+N = 240*(t_1-t_0)
 tau = (t_1 - t_0) / N
 t = np.linspace(t_0, t_1, N + 1)
 
