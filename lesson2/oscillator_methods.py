@@ -33,8 +33,8 @@ $$ m\ddot{u} + b\dot{u} + ku = 0 $$
 """ Физические параметры гармонического осциллятора """
 
 m = 1.0   # масса, кг
-k = 100.0  # жесткость пружины, Н/м
-b = 0.0  # коэффициент трения, кг/с
+b = 0.01  # коэффициент трения, кг/с
+k = 4.0  # жесткость пружины, Н/м
 
 """ Начальные условия """
 
@@ -43,9 +43,11 @@ v0 = 0.0   # начальная скорость, м/с
 
 """ Параметры интегрирования """
 
-T = 10.0          # время моделирования, с (уменьшили для жесткой системы)
+T = 10.0     # время моделирования, с (уменьшили для жесткой системы)
 dt = 0.01      # шаг интегрирования, с (уменьшили для стабильности Адамса)
 n_steps = int(T/dt)   # число шагов
+
+
 
 """ Массив времени """
 
@@ -104,29 +106,29 @@ def analytical_method(u0, v0, dt, n_steps):
     gamma = b / (2 * m)      # коэффициент затухания
 
     # Определяем тип колебаний
-    discriminant = omega**2 - gamma**2
+    discriminant = gamma**2 - omega**2 
 
     t = np.arange(0, T, dt)
 
-    if discriminant > 0:  # Недозатухающий режим
-        omega = np.sqrt(discriminant)
-        A = u0
-        B = (v0 + gamma * u0) / omega
-
-        u = np.exp(-gamma * t) * (A * np.cos(omega * t) + B * np.sin(omega * t))
-        v = np.exp(-gamma * t) * ((-gamma * A - omega * B) * np.cos(omega * t) +
-                                  (-gamma * B + omega * A) * np.sin(omega * t))
-
-    elif discriminant < 0:  # Перезагужающий режим
-        alpha = np.sqrt(-discriminant)
+    if discriminant > 0:  # Экспоненциальное затухание 
+        alpha = np.sqrt(discriminant)
         A = u0
         B = (v0 + gamma * u0) / alpha
 
         u = np.exp(-gamma * t) * (A * np.cosh(alpha * t) + B * np.sinh(alpha * t))
-        v = np.exp(-gamma * t) * ((-gamma * A - alpha * B) * np.cosh(alpha * t) +
+        v = np.exp(-gamma * t) * ((-gamma * A + alpha * B) * np.cosh(alpha * t) +
                                   (-gamma * B + alpha * A) * np.sinh(alpha * t))
 
-    else:  # Критическое затухание
+    elif discriminant < 0:  # Затухание колебаний
+        alpha = np.sqrt(-discriminant)
+        A = u0
+        B = (v0 + gamma * u0) / alpha
+
+        u = np.exp(-gamma * t) * (A * np.cos(alpha * t) + B * np.sin(alpha * t))
+        v = np.exp(-gamma * t) * ((-gamma * A + alpha * B) * np.cos(alpha * t) +
+                                  (-gamma * B - alpha * A) * np.sin(alpha * t))
+
+    else:  # Плавное затухание
         A = u0
         B = v0 + gamma * u0
 
@@ -643,13 +645,13 @@ energy_adams_moulton4 = energy(u_adams_moulton4, v_adams_moulton4)
 
 # Подготавливаем данные для графиков
 plot_data = [
-    {
-        'label': 'Leapfrog',
-        'color': 'cyan',
-        'u': u_leapfrog,
-        'v': v_leapfrog,
-        'e': energy_leapfrog
-    },
+    # {
+    #     'label': 'Leapfrog',
+    #     'color': 'cyan',
+    #     'u': u_leapfrog,
+    #     'v': v_leapfrog,
+    #     'e': energy_leapfrog
+    # },
     {
         'label': 'RK4',
         'color': 'orange',
@@ -657,41 +659,41 @@ plot_data = [
         'v': v_rk4,
         'e': energy_rk4
     },
-    {
-        'label': 'RK2',
-        'color': 'orange',
-        'u': u_rk2,
-        'v': v_rk2,
-        'e': energy_rk2
-    },    
-    {
-        'label': 'Адамс-Бэшфорт-2',
-        'color': 'purple',
-        'u': u_adams2,
-        'v': v_adams2,
-        'e': energy_adams2
-    },
-    {
-        'label': 'Адамс-Бэшфорт-4',
-        'color': 'brown',
-        'u': u_adams4,
-        'v': v_adams4,
-        'e': energy_adams4
-    },
-    {
-        'label': 'Адамс-Моултон-2',
-        'color': 'magenta',
-        'u': u_adams_moulton2,
-        'v': v_adams_moulton2,
-        'e': energy_adams_moulton2
-    },
-    {
-        'label': 'Адамс-Моултон-4',
-        'color': 'cyan',
-        'u': u_adams_moulton4,
-        'v': v_adams_moulton4,
-        'e': energy_adams_moulton4
-    },
+    # {
+    #     'label': 'RK2',
+    #     'color': 'orange',
+    #     'u': u_rk2,
+    #     'v': v_rk2,
+    #     'e': energy_rk2
+    # },    
+    # {
+    #     'label': 'Адамс-Бэшфорт-2',
+    #     'color': 'purple',
+    #     'u': u_adams2,
+    #     'v': v_adams2,
+    #     'e': energy_adams2
+    # },
+    # {
+    #     'label': 'Адамс-Бэшфорт-4',
+    #     'color': 'brown',
+    #     'u': u_adams4,
+    #     'v': v_adams4,
+    #     'e': energy_adams4
+    # },
+    # {
+    #     'label': 'Адамс-Моултон-2',
+    #     'color': 'magenta',
+    #     'u': u_adams_moulton2,
+    #     'v': v_adams_moulton2,
+    #     'e': energy_adams_moulton2
+    # },
+    # {
+    #     'label': 'Адамс-Моултон-4',
+    #     'color': 'cyan',
+    #     'u': u_adams_moulton4,
+    #     'v': v_adams_moulton4,
+    #     'e': energy_adams_moulton4
+    # },
     {
         'label': 'Аналитика',
         'color': 'green',
@@ -700,8 +702,6 @@ plot_data = [
         'e': energy_analytic
     }
 ]
-
-plots(t, T, plot_data)
 
 """ ## Сравнение методов """
 
