@@ -5,13 +5,16 @@
 Находим угол стрельбы, при котором снаряд попадает точно в цель.
 """
 
-""" ## Импорты и параметры ## """
+""" ## Импорты ## """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve, newton
 from matplotlib.cm import get_cmap
-from ballistics_utils import plot_trajectories, plot_convergence
+from lesson3_utils import plot_trajectories, plot_convergence
+
+
+""" ## Параметры системы ## """
 
 # Ускорение свободного падения, м/с²
 g = 9.81
@@ -50,23 +53,33 @@ dt = t_max / n_steps
 
 def equations_of_motion(state, t):
     """
-    Правые части системы уравнений движения снаряда
+    Вычисление правых частей системы дифференциальных уравнений движения снаряда.
+
+    Модель учитывает:
+    - Гравитационное ускорение (направлено вниз)
+    - Сопротивление воздуха (пропорционально скорости)
+    - Горизонтальный ветер (постоянная добавка к ускорению)
 
     Args:
-        state: вектор состояния [x, y, vx, vy]
-        t: время (не используется в автономной системе)
+        state (numpy.ndarray): вектор состояния [x, y, vx, vy], где
+                               x, y - координаты (метры), vx, vy - скорости (м/с)
+        t (float): текущее время (секунды). Не используется в автономной системе.
 
     Returns:
-        array: производные [dx/dt, dy/dt, dvx/dt, dvy/dt]
+        numpy.ndarray: вектор производных [dx/dt, dy/dt, dvx/dt, dvy/dt]
+                       dx/dt, dy/dt - скорости (м/с)
+                       dvx/dt, dvy/dt - ускорения (м/с²)
     """
     x, y, vx, vy = state
 
-    # Производные координат
-    dx_dt = vx
-    dy_dt = vy
+    # Производные координат (скорости)
+    dx_dt = vx  # скорость по x
+    dy_dt = vy  # скорость по y
 
-    # Производные скоростей (сопротивление воздуха + ветер + гравитация)
+    # Производные скоростей (ускорения)
+    # Горизонтальное ускорение: сопротивление воздуха + ветер
     dvx_dt = -k * vx + wind_x
+    # Вертикальное ускорение: гравитация + сопротивление воздуха
     dvy_dt = -g - k * vy
 
     return np.array([dx_dt, dy_dt, dvx_dt, dvy_dt])
@@ -74,72 +87,145 @@ def equations_of_motion(state, t):
 
 def rk4_step(state, t):
     """
-    Один шаг метода Рунге-Кутты 4-го порядка
+    Выполнение одного шага интегрирования методом Рунге-Кутты 4-го порядка.
+
+    RK4 обеспечивает высокую точность интегрирования при умеренных вычислительных затратах.
+    Метод вычисляет четыре оценки наклона и комбинирует их для получения точного результата.
 
     Args:
-        state: текущее состояние системы
-        t: текущее время
+        state (numpy.ndarray): текущее состояние системы [x, y, vx, vy]
+        t (float): текущее время, секунды
 
     Returns:
-        array: состояние системы на следующем шаге
+        numpy.ndarray: состояние системы на следующем временном шаге [x, y, vx, vy]
     """
+    # Вычисление коэффициентов Рунге-Кутты
     k1 = dt * equations_of_motion(state, t)
     k2 = dt * equations_of_motion(state + 0.5 * k1, t + 0.5 * dt)
     k3 = dt * equations_of_motion(state + 0.5 * k2, t + 0.5 * dt)
     k4 = dt * equations_of_motion(state + k3, t + dt)
 
+    # Комбинация коэффициентов для получения нового состояния
     return state + (k1 + 2*k2 + 2*k3 + k4) / 6
+
+
+def initialize_state(theta):
+    """
+    Инициализация вектора состояния снаряда для заданного угла стрельбы.
+
+    Args:
+        theta (float): начальный угол стрельбы, радианы
+
+    Returns:
+        numpy.ndarray: вектор состояния [x, y, vx, vy] в начальный момент времени
+    """
+    vx0 = v0 * np.cos(theta)
+    vy0 = v0 * np.sin(theta)
+    return np.array([x_start, y_start, vx0, vy0])
+
+
+def integrate_until_ground(initial_state):
+    """
+    Интегрирование траектории снаряда до момента падения на землю (y <= 0).
+
+    Args:
+        initial_state (numpy.ndarray): начальный вектор состояния [x, y, vx, vy]
+
+    Returns:
+        tuple: (финальное состояние, траектория)
+               финальное состояние: numpy.ndarray [x, y, vx, vy]
+               траектория: list[numpy.ndarray] с состояниями на каждом шаге
+    """
+    state = initial_state.copy()
+    trajectory = [state.copy()]
+
+    t = 0.0
+
+    # Интегрируем до тех пор, пока не достигнем земли или не превысим максимальное время
+    while t < t_max and state[1] >= 0:
+        state = rk4_step(state, t)
+        t += dt
+        trajectory.append(state.copy())
+
+    return state, trajectory
+
+
+def interpolate_ground_impact(trajectory):
+    """
+    Интерполяция траектории для точного определения точки падения (y = 0).
+
+    Args:
+        trajectory (list[numpy.ndarray]): список состояний траектории
+
+    Returns:
+        numpy.ndarray: точка падения [x, y, vx, vy] при y = 0
+    """
+    if len(trajectory) < 2:
+        return trajectory[-1]
+
+    # Находим последние две точки траектории
+    state_prev = trajectory[-2]
+    state_curr = trajectory[-1]
+
+    # Линейная интерполяция для точного определения x при y = 0
+    if state_curr[1] < 0 and state_prev[1] >= 0:
+        # Пропорция времени, когда y пересекает 0
+        ratio = -state_prev[1] / (state_curr[1] - state_prev[1])
+
+        # Интерполируем все компоненты состояния
+        interpolated_state = state_prev + ratio * (state_curr - state_prev)
+        interpolated_state[1] = 0.0  # Точно устанавливаем y = 0
+        return interpolated_state
+
+    return state_curr
 
 
 def integrate_trajectory(theta, return_full_trajectory=False):
     """
-    Интегрирование траектории снаряда для заданного угла theta
+    Интегрирование полной траектории снаряда для заданного угла стрельбы.
+
+    Функция моделирует полет снаряда от начальной точки до падения на землю,
+    учитывая гравитацию, сопротивление воздуха и горизонтальный ветер.
 
     Args:
-        theta: начальный угол стрельбы, радианы
-        return_full_trajectory: если True, возвращает всю траекторию
+        theta (float): начальный угол стрельбы относительно горизонта, радианы
+        return_full_trajectory (bool): если True, возвращает массив всех состояний траектории
 
     Returns:
-        tuple: (конечная точка, полная траектория если запрошена)
+        tuple или numpy.ndarray:
+            - Если return_full_trajectory=False: финальное состояние [x, y, vx, vy] при падении
+            - Если return_full_trajectory=True: (финальное состояние, траектория)
+              где траектория - numpy.ndarray формы (n_points, 4) с состояниями [x, y, vx, vy]
     """
-    # Начальные условия
-    vx0 = v0 * np.cos(theta)
-    vy0 = v0 * np.sin(theta)
+    # Инициализация начального состояния
+    initial_state = initialize_state(theta)
 
-    state = np.array([x_start, y_start, vx0, vy0])
+    # Интегрирование до падения на землю
+    final_state, trajectory = integrate_until_ground(initial_state)
 
     if return_full_trajectory:
-        trajectory = [state.copy()]
-
-    t = 0.0
-
-    # Интегрируем до тех пор, пока не достигнем земли (y <= 0) или не превысим время
-    while t < t_max and state[1] >= 0:
-        state = rk4_step(state, t)
-        t += dt
-
-        if return_full_trajectory:
-            trajectory.append(state.copy())
-
-    # Интерполяция для точного попадания в y = 0
-    if return_full_trajectory:
-        trajectory = np.array(trajectory)
-        return state, trajectory
+        # Интерполяция для точного определения точки падения
+        trajectory_array = np.array(trajectory)
+        interpolated_final = interpolate_ground_impact(trajectory)
+        return interpolated_final, trajectory_array
     else:
-        return state
+        return final_state
 
 
 """ ## 2. Метод Ньютона ## """
 
 def residual_function(theta):
     """
-    Функция невязки для метода Ньютона
+    Вычисление функции невязки для метода Ньютона.
+
+    Невязка показывает отклонение точки падения снаряда от целевой координаты x.
 
     Args:
-        theta: начальный угол стрельбы, радианы
+        theta (float): начальный угол стрельбы, радианы
 
     Returns:
-        float: отклонение конечной координаты x от целевой
+        float: невязка (x_final - x_target), метры
+               положительная - перелет, отрицательная - недолет
     """
     final_state = integrate_trajectory(theta)
     x_final = final_state[0]
@@ -149,35 +235,47 @@ def residual_function(theta):
 
 def residual_derivative(theta, h=1e-6):
     """
-    Численное вычисление производной функции невязки
+    Численное вычисление производной функции невязки методом центральных разностей.
+
+    Использует центральную разностную схему для точного вычисления производной:
+    f'(x) ≈ (f(x+h) - f(x-h)) / (2h)
 
     Args:
-        theta: угол стрельбы, радианы
-        h: шаг для численного дифференцирования
+        theta (float): угол стрельбы, радианы
+        h (float): шаг численного дифференцирования, радианы
 
     Returns:
-        float: производная d(residual)/d(theta)
+        float: производная d(residual)/d(theta), метры/радиан
     """
     return (residual_function(theta + h) - residual_function(theta - h)) / (2 * h)
 
 
 def newton_method(theta_initial, max_iterations=50):
     """
-    Метод Ньютона для решения баллистической задачи
+    Решение обратной баллистической задачи методом Ньютона.
+
+    Метод Ньютона использует информацию о значении функции и ее производной
+    для квадратичной сходимости к решению уравнения f(θ) = 0.
 
     Args:
-        theta_initial: начальное приближение угла, радианы
-        max_iterations: максимальное число итераций
+        theta_initial (float): начальное приближение угла стрельбы, радианы
+        max_iterations (int): максимальное число итераций поиска
 
     Returns:
-        tuple: (найденный угол, список углов на итерациях, список невязок)
+        tuple: (theta_solution, theta_history, residual_history)
+               theta_solution (float): найденный угол стрельбы, радианы
+               theta_history (list[float]): история углов на всех итерациях
+               residual_history (list[float]): история невязок на всех итерациях
+
+    Raises:
+        ValueError: если нулевая производная или не сошелся за max_iterations
     """
     theta = theta_initial
     theta_history = [theta]
     residual_history = [residual_function(theta)]
 
-    print("\nНачало метода Ньютона:")
-    print(f"Начальное приближение: θ = {np.degrees(theta):.4f}")
+    print("Начало метода Ньютона:")
+    print(f"Начальное приближение: θ = {np.degrees(theta):.4f}°")
 
     for iteration in range(max_iterations):
         residual = residual_function(theta)
@@ -185,20 +283,20 @@ def newton_method(theta_initial, max_iterations=50):
 
         # Проверка на достижение точности
         if abs(residual) < tolerance:
-            print(f"Решение найдено: θ = {np.degrees(theta):.4f}")
+            print(f"Решение найдено: θ = {np.degrees(theta):.4f}°")
             return theta, theta_history, residual_history
 
         # Проверка на нулевую производную
         if abs(derivative) < 1e-12:
             raise ValueError(f"Нулевая производная на итерации {iteration}")
 
-        # Шаг метода Ньютона
+        # Шаг метода Ньютона: θ_{n+1} = θ_n - f(θ_n)/f'(θ_n)
         theta_new = theta - residual / derivative
 
         theta_history.append(theta_new)
         residual_history.append(residual_function(theta_new))
 
-        print(f"Итерация {iteration+1}: θ = {np.degrees(theta_new):.4f}, невязка = {residual_function(theta_new):.4f}")
+        print(f"Итерация {iteration+1}: θ = {np.degrees(theta_new):.4f}°, невязка = {residual_function(theta_new):.4f} м")
 
         theta = theta_new
 
@@ -207,38 +305,37 @@ def newton_method(theta_initial, max_iterations=50):
 
 """ ## 3. Демонстрация метода Ньютона ## """
 
-# Выполнение метода Ньютона
+# Настройка начального приближения
 theta_initial = np.radians(35)  # 35 градусов - начальное приближение
 
+# Вывод заголовка и параметров задачи
 print("="*60)
 print("МЕТОД НЬЮТОНА: ОБРАТНАЯ БАЛЛИСТИЧЕСКАЯ ЗАДАЧА")
 print("="*60)
-print(f"Целевая точка: x = {x_target} м")
+print(f"Целевая точка: x = {x_target} м, y = {y_target} м")
 print(f"Начальная скорость: v0 = {v0} м/с")
 print(f"Сопротивление воздуха: k = {k} 1/с")
 print(f"Горизонтальный ветер: wx = {wind_x} м/с")
 print()
 
-try:
-    theta_newton, theta_hist_newton, residual_hist_newton = newton_method(theta_initial)
+# Выполнение метода Ньютона
+theta_newton, theta_hist_newton, residual_hist_newton = newton_method(theta_initial)
 
-    print("\nРезультат метода Ньютона:")
-    print(f"Угол стрельбы: {np.degrees(theta_newton):.6f}°")
-    print(f"Невязка: {residual_hist_newton[-1]:.2e}")
+# Вывод результатов
+print("\nРезультат метода Ньютона:")
+print(f"Угол стрельбы: {np.degrees(theta_newton):.6f}°")
+print(f"Невязка: {residual_hist_newton[-1]:.2e}")
 
-    # Проверка решения
-    final_state = integrate_trajectory(theta_newton)
-    print(f"Достигнутая точка: x = {final_state[0]:.3f} м, y = {final_state[1]:.3f} м")
+# Проверка решения
+final_state = integrate_trajectory(theta_newton)
+print(f"Достигнутая точка: x = {final_state[0]:.3f} м, y = {final_state[1]:.3f} м")
 
-    # Визуализация процесса сходимости метода Ньютона
-    print("\nВизуализация процесса сходимости метода Ньютона...")
-    plot_trajectories(theta_hist_newton[:min(6, len(theta_hist_newton))], integrate_trajectory,
-                     x_target, y_target, x_start, y_start,
-                     f"Процесс сходимости метода Ньютона (ветер: {wind_x} м/с)")
-    plot_convergence(theta_hist_newton, residual_hist_newton, "Метод Ньютона")
-
-except ValueError as e:
-    print(f"Ошибка в методе Ньютона: {e}")
+# Визуализация процесса сходимости метода Ньютона
+print("\nВизуализация процесса сходимости метода Ньютона...")
+plot_trajectories(theta_hist_newton[:min(6, len(theta_hist_newton))], integrate_trajectory,
+                 x_target, y_target, x_start, y_start,
+                 f"Процесс сходимости метода Ньютона (ветер: {wind_x} м/с)")
+plot_convergence(theta_hist_newton, residual_hist_newton, "Метод Ньютона")
 
 
 """ ## Выводы ## """
@@ -257,7 +354,7 @@ except ValueError as e:
    после первых итераций, что является его основным преимуществом
 
 3. **Численное дифференцирование**: Для вычисления производной использовалась
-   центральная разностная схема
+   центральная разностная схема второго порядка точности
 
 4. **Визуализация**: Графики показывают, как метод быстро приближается к решению
    за небольшое число итераций
