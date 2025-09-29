@@ -4,6 +4,7 @@ import matplotlib.animation as animation
 from scipy.integrate import solve_ivp
 from collections import deque
 
+# класс маятника. Содержит его параметры и логику движения
 class DoublePendulum:
     def __init__(self, L1=1.0, L2=1.0, m1=1.0, m2=1.0, g=9.81):
         self.L1 = L1
@@ -14,6 +15,7 @@ class DoublePendulum:
         self.trail1 = deque(maxlen=500)
         self.trail2 = deque(maxlen=500)
 
+    # специльная функция для вычисления производных, используется для численного решение диффура
     def Derivatives(self, t, state):
         theta1, w1, theta2, w2 = state
 
@@ -37,6 +39,7 @@ class DoublePendulum:
         
         return np.array((w1, acc1, w2, acc2))
     
+    # функция для вычисления декартовых координат
     def GetPositions(self, theta1, theta2):
         x1 = self.L1 * np.sin(theta1)
         y1 = -self.L1 * np.cos(theta1)
@@ -45,6 +48,7 @@ class DoublePendulum:
         return x1, y1, x2, y2
 
 
+# функция для численного решения движения маятника. Решается методом RK45
 def SimulatePendulum(pendulum, initial_conditions, t_span, dt):
     t_eval = np.arange(t_span[0], t_span[1], dt)
 
@@ -58,11 +62,11 @@ def SimulatePendulum(pendulum, initial_conditions, t_span, dt):
         atol=1e-8,
     )
 
-
+# функция для создании анимации
 def CreateAnimation(pendulums, simulations, init_conds):
     assert len(pendulums) == len(simulations)
 
-    #
+    # получение данных (численного решения движения) маятников
     coords_params = []
     for i in range(len(pendulums)):
         theta1 = simulations[i].y[0]
@@ -78,6 +82,7 @@ def CreateAnimation(pendulums, simulations, init_conds):
     fig = plt.figure(figsize=(15, 5))
     colors = plt.cm.plasma(np.linspace(0, 1, len(pendulums)))
     
+    # первый график - сами маятники
     ax1 = fig.add_subplot(121)
     ax1.set_xlim(-2.5, 2.5)
     ax1.set_ylim(-2.5, 2.5)
@@ -86,7 +91,7 @@ def CreateAnimation(pendulums, simulations, init_conds):
     ax1.set_xlabel('x')
     ax1.set_ylabel('y')
     ax1.set_title('Двойной маятник')
-    #
+    # создаю для каждого маятника массивы координат с его движением для отображения
     pendulums_trails = []
     for i in range(len(pendulums)):
         line, = ax1.plot([], [], 'o-', lw=2, color=colors[i], markersize=8, label=f'Pendulum: {i}; θ₁={init_conds[i][0]:.2f}, θ₂={init_conds[i][2]:.2f}, W₁={init_conds[i][1]}, W₂={init_conds[i][3]}')
@@ -98,12 +103,13 @@ def CreateAnimation(pendulums, simulations, init_conds):
     ax1.legend()
     time_text = ax1.text(0.02, 0.95, '', transform=ax1.transAxes)
     
+    # второй график - наглядное изменение угла theta1 у маятников
     ax2 = fig.add_subplot(222)
     ax2.set_xlabel('Время (с)')
     ax2.set_ylabel('Угол (рад)')
     ax2.set_title('Изменение угла θ₁')
     ax2.grid(True, alpha=0.3)
-    #
+    # создаю для каждого маятника массивы изменения угла theta1
     lines_theta1 = []
     for i in range(len(pendulums)):
         line, = ax2.plot([], [], '-', label=f'Pendulum: {i}', color=colors[i], lw=1.5)
@@ -114,12 +120,13 @@ def CreateAnimation(pendulums, simulations, init_conds):
     ax2.set_xlim(0, simulations[0].t[-1])
     ax2.set_ylim(-2*np.pi, 2*np.pi)
 
+    # третий график - наглядное изменение угла theta2 у маятников
     ax3 = fig.add_subplot(224)
     ax3.set_xlabel('Время (с)')
     ax3.set_ylabel('Угол (рад)')
     ax3.set_title('Изменение угла θ₂')
     ax3.grid(True, alpha=0.3)
-    #
+    # создаю для каждого маятника массивы изменения угла theta2
     lines_theta2 = []
     for i in range(len(pendulums)):
         line, = ax3.plot([], [], '-', label=f'Pendulum: {i}', color=colors[i], lw=1.5)
@@ -130,6 +137,7 @@ def CreateAnimation(pendulums, simulations, init_conds):
     ax3.set_xlim(0, simulations[0].t[-1])
     ax3.set_ylim(-2*np.pi, 2*np.pi)
     
+    # специальная функция для инициализации массивов для анимации
     def init():
         meta_array = []
         for i in range(len(pendulums_trails)):
@@ -154,6 +162,7 @@ def CreateAnimation(pendulums, simulations, init_conds):
         meta_array.extend([time_text])
         return meta_array
     
+    # сама функция анимации (на i-ом шаге)
     def animate(i):
         meta_array = []
         for j in range(len(pendulums)):
@@ -191,6 +200,7 @@ def CreateAnimation(pendulums, simulations, init_conds):
         meta_array.extend([time_text])
         return meta_array
     
+    # сама анимация
     ani = animation.FuncAnimation(
         fig, animate, init_func=init,
         frames=len(t), interval=25, blit=True
@@ -201,39 +211,44 @@ def CreateAnimation(pendulums, simulations, init_conds):
 
 
 if __name__ == "__main__":
+    # создаю 5 модель маятников для визаулизации и сравнения
     pendulum1 = DoublePendulum()
     pendulum2 = DoublePendulum()
     pendulum3 = DoublePendulum()
     pendulum4 = DoublePendulum()
     pendulum5 = DoublePendulum()
 
+    # сетка по времени
     t_max = 20
     dt = 0.03
 
+    # для каждого маятника задаю начальные условия - два угла и две угловые скорости [theta1, w1, theta2, w2]
     init_cond1 = [np.pi/3, 0.0,  np.pi/3, 0.0]
     simulation1 = SimulatePendulum(pendulum1, init_cond1, (0, t_max), dt)
 
-    init_cond2 = [np.pi/3 + np.pi/36, 0.0,  np.pi/3+np.pi/36, 0.0]
+    init_cond2 = [np.pi/4, 0.0,  np.pi/2, 0.0]
     simulation2 = SimulatePendulum(pendulum2, init_cond2, (0, t_max), dt)
 
-    init_cond3 = [np.pi/3 - np.pi/36, 0.0,  np.pi/3-np.pi/36, 0.0]
+    init_cond3 = [np.pi/2, 0.0,  np.pi/2, 0.0]
     simulation3 = SimulatePendulum(pendulum3, init_cond3, (0, t_max), dt)
 
     init_cond4 = [np.pi/3, 0.5, np.pi/3, 1.0]
     simulation4 = SimulatePendulum(pendulum4, init_cond4, (0, t_max), dt)
 
-    init_cond5 = [np.pi/3, -0.5, np.pi/3, -1.0]
+    init_cond5 = [np.pi/6, 2, np.pi/6, -1.0]
     simulation5 = SimulatePendulum(pendulum5, init_cond5, (0, t_max), dt)
 
     pendulums = [pendulum1, pendulum2, pendulum3, pendulum4, pendulum5]
     simulations = [simulation1, simulation2, simulation3, simulation4, simulation5]
 
+    # вычисляю относительную ошибку
     print("Максимальное Относительное отклонение θ₂ маятников от Pendulum 1")
     for i in range(1, len(pendulums)-1):
         theta2 = simulations[i].y[2]
         theta2_an = simulations[0].y[2]
         print(f"Pendulum {i+1}: {np.max(np.abs(theta2-theta2_an)) / np.max(np.abs(theta2_an))}")
 
+    # строю анимацию маятников
     ani = CreateAnimation(
         pendulums, 
         simulations,

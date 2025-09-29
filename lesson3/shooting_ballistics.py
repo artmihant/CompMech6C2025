@@ -1,14 +1,17 @@
 """ # Метод стрельбы: решение обратной баллистической задачи # """
 
 """
-Демонстрация метода стрельбы для решения обратной баллистической задачи.
+Демонстрация двух вариантов метода стрельбы для решения обратной баллистической задачи:
+1. Метод стрельбы с корректировкой regula falsi
+2. Метод стрельбы с корректировкой методом Ньютона
+
 Находим угол стрельбы, при котором снаряд попадает точно в цель.
 """
 
 """ ## Импорты ## """
 
 import numpy as np
-from lesson3_utils import plot_trajectories, plot_convergence
+from lesson3_utils import plot_combined_analysis, plot_convergence
 
 
 """ ## Параметры системы ## """
@@ -127,9 +130,7 @@ def integrate_until_ground(initial_state):
         return_trajectory (bool): если True, возвращает всю траекторию
 
     Returns:
-        tuple: (финальное состояние, траектория если запрошена)
-               финальное состояние: numpy.ndarray [x, y, vx, vy]
-               траектория: list[numpy.ndarray]
+        tuple: траектория: numpy.ndarray[[x, y, vx, vy]]
     """
     state = initial_state.copy()
     trajectory = [state.copy()]
@@ -143,7 +144,7 @@ def integrate_until_ground(initial_state):
 
         trajectory.append(state.copy())
 
-    return state, trajectory
+    return np.array(trajectory)
 
 
 def interpolate_ground_impact(trajectory):
@@ -185,30 +186,29 @@ def integrate_trajectory(theta, return_full_trajectory=False):
 
     Args:
         theta (float): начальный угол стрельбы относительно горизонта, радианы
-        return_full_trajectory (bool): если True, возвращает массив всех состояний траектории
+        return_full_trajectory (bool): если True, возвращает (финальное состояние, траектория)
 
     Returns:
-        tuple или numpy.ndarray:
-            - Если return_full_trajectory=False: финальное состояние [x, y, vx, vy] при падении
-            - Если return_full_trajectory=True: (финальное состояние, траектория)
-              где траектория - numpy.ndarray формы (n_points, 4) с состояниями [x, y, vx, vy]
+        Если return_full_trajectory=False: trajectory numpy.ndarray формы (n_points, 4)
+        Если return_full_trajectory=True: (финальное состояние, траектория)
     """
     # Инициализация начального состояния
     initial_state = initialize_state(theta)
 
     # Интегрирование до падения на землю
-    final_state, trajectory = integrate_until_ground(initial_state)
+    trajectory = integrate_until_ground(initial_state)
+
+    # Интерполяция для точного определения точки падения
+    interpolated_final = interpolate_ground_impact(trajectory)
+    trajectory[-1] = interpolated_final
 
     if return_full_trajectory:
-        # Интерполяция для точного определения точки падения
-        trajectory_array = np.array(trajectory)
-        interpolated_final = interpolate_ground_impact(trajectory)
-        return interpolated_final, trajectory_array
+        return interpolated_final, trajectory
     else:
-        return final_state
+        return trajectory
 
 
-""" ## 3. Метод стрельбы ## """
+""" ## 3. Метод стрельбы с корректировкой regula falsi ## """
 
 def residual_function(theta):
     """
@@ -223,7 +223,7 @@ def residual_function(theta):
         float: невязка (x_final - x_target), метры
                положительная - перелет, отрицательная - недолет
     """
-    final_state = integrate_trajectory(theta)
+    final_state, trajectory = integrate_trajectory(theta, return_full_trajectory=True)
     x_final = final_state[0]
 
     return x_final - x_target
@@ -349,8 +349,8 @@ def shooting_method(theta_left, theta_right, max_iterations=50):
         theta_left, theta_right)
 
     print("Начало метода стрельбы:")
-    print(f"θ_left = {np.degrees(theta_left):.4f}°, residual_left = {residual_left:.4f} м")
-    print(f"θ_right = {np.degrees(theta_right):.4f}°, residual_right = {residual_right:.4f} м")
+    print(f"θ_left = {np.degrees(theta_left):.4f}°, residual_left = {float(residual_left):.4f} м")
+    print(f"θ_right = {np.degrees(theta_right):.4f}°, residual_right = {float(residual_right):.4f} м")
 
     # Основной цикл итераций
     for iteration in range(max_iterations):
@@ -380,15 +380,91 @@ def shooting_method(theta_left, theta_right, max_iterations=50):
     raise ValueError(f"Метод не сошелся за {max_iterations} итераций")
 
 
-""" ## 4. Демонстрация метода стрельбы ## """
+""" ## 4. Метод стрельбы с корректировкой методом Ньютона ## """
 
-# Настройка границ поиска
+def residual_derivative(theta, h=1e-6):
+    """
+    Численное вычисление производной функции невязки методом центральных разностей.
+
+    Использует центральную разностную схему для точного вычисления производной:
+    f'(x) ≈ (f(x+h) - f(x-h)) / (2h)
+
+    Args:
+        theta (float): угол стрельбы, радианы
+        h (float): шаг численного дифференцирования, радианы
+
+    Returns:
+        float: производная d(residual)/d(theta), метры/радиан
+    """
+    return (residual_function(theta + h) - residual_function(theta - h)) / (2 * h)
+
+
+def shooting_method_newton_correction(theta_initial, max_iterations=50):
+    """
+    Решение обратной баллистической задачи методом стрельбы с корректировкой методом Ньютона.
+
+    Метод стрельбы использует начальное приближение угла и корректирует его
+    методом Ньютона, используя информацию о значении функции и ее производной
+    для квадратичной сходимости к решению уравнения f(θ) = 0.
+
+    Args:
+        theta_initial (float): начальное приближение угла стрельбы, радианы
+        max_iterations (int): максимальное число итераций поиска
+
+    Returns:
+        tuple: (theta_solution, theta_history, residual_history)
+               theta_solution (float): найденный угол стрельбы, радианы
+               theta_history (list[float]): история углов на всех итерациях
+               residual_history (list[float]): история невязок на всех итерациях
+
+    Raises:
+        ValueError: если нулевая производная или не сошелся за max_iterations
+    """
+    theta = theta_initial
+    theta_history = [theta]
+    residual_history = [residual_function(theta)]
+
+    print("Начало метода стрельбы с корректировкой Ньютона:")
+    print(f"Начальное приближение: θ = {np.degrees(theta):.4f}°")
+
+    for iteration in range(max_iterations):
+        residual = residual_function(theta)
+        derivative = residual_derivative(theta)
+
+        # Проверка на достижение точности
+        if abs(residual) < tolerance:
+            print(f"Решение найдено: θ = {np.degrees(theta):.4f}°")
+            return theta, theta_history, residual_history
+
+        # Проверка на нулевую производную
+        if abs(derivative) < 1e-12:
+            raise ValueError(f"Нулевая производная на итерации {iteration}")
+
+        # Шаг метода Ньютона: θ_{n+1} = θ_n - f(θ_n)/f'(θ_n)
+        theta_new = theta - residual / derivative
+
+        theta_history.append(theta_new)
+        residual_history.append(residual_function(theta_new))
+
+        print(f"Итерация {iteration+1}: θ = {np.degrees(theta_new):.4f}°, невязка = {residual_function(theta_new):.4f} м")
+
+        theta = theta_new
+
+    raise ValueError(f"Метод стрельбы с корректировкой Ньютона не сошелся за {max_iterations} итераций")
+
+
+""" ## 5. Демонстрация методов стрельбы ## """
+
+# Настройка границ поиска для метода стрельбы с regula falsi
 theta_left = np.radians(10)   # 10 градусов - снаряд не долетит
-theta_right = np.radians(80)  # 80 градусов - снаряд перелетит
+theta_right = np.radians(45)  # 45 градусов - снаряд перелетит
+
+# Настройка начального приближения для метода стрельбы с Ньютона
+theta_initial = np.radians(35)  # 35 градусов - начальное приближение
 
 # Вывод заголовка и параметров задачи
 print("="*60)
-print("МЕТОД СТРЕЛЬБЫ: ОБРАТНАЯ БАЛЛИСТИЧЕСКАЯ ЗАДАЧА")
+print("МЕТОДЫ СТРЕЛЬБЫ: ОБРАТНАЯ БАЛЛИСТИЧЕСКАЯ ЗАДАЧА")
 print("="*60)
 print(f"Целевая точка: x = {x_target} м, y = {y_target} м")
 print(f"Начальная скорость: v0 = {v0} м/с")
@@ -396,48 +472,124 @@ print(f"Сопротивление воздуха: k = {k} 1/с")
 print(f"Горизонтальный ветер: wx = {wind_x} м/с")
 print()
 
-# Запуск метода стрельбы
+# Выполнение метода стрельбы с regula falsi
+print("="*50)
+print("МЕТОД СТРЕЛЬБЫ С КОРРЕКТИРОВКОЙ REGULA FALSI")
+print("="*50)
 theta_shooting, theta_hist_shooting, residual_hist_shooting = shooting_method(theta_left, theta_right)
 
-# Вывод результатов
-print("\nРезультат метода стрельбы:")
+# Вывод результатов метода стрельбы с regula falsi
+print("\nРезультат метода стрельбы с regula falsi:")
 print(f"Угол стрельбы: {np.degrees(theta_shooting):.6f}°")
 print(f"Невязка: {residual_hist_shooting[-1]:.2e}")
 
-# Проверка решения
-final_state = integrate_trajectory(theta_shooting)
+# Проверка решения метода стрельбы с regula falsi
+final_state = integrate_trajectory(theta_shooting)[-1]
 print(f"Достигнутая точка: x = {final_state[0]:.3f} м, y = {final_state[1]:.3f} м")
 
-# Визуализация первых траекторий
-print("\nВизуализация первых траекторий метода стрельбы...")
+# Объединенная визуализация метода стрельбы с regula falsi
+print("\nОбъединенная визуализация метода стрельбы с regula falsi...")
 n_trajectories = min(8, len(theta_hist_shooting))
-plot_trajectories(theta_hist_shooting[:n_trajectories], integrate_trajectory,
-                 x_target, y_target, x_start, y_start,
-                 f"Первые {n_trajectories} траекторий метода стрельбы (ветер: {wind_x} м/с)")
+plot_combined_analysis(theta_hist_shooting[:n_trajectories], integrate_trajectory,
+                      theta_hist_shooting, residual_hist_shooting,
+                      x_target, y_target, x_start, y_start,
+                      "Метод стрельбы с regula falsi")
 
-# Визуализация процесса сходимости
-plot_convergence(theta_hist_shooting, residual_hist_shooting, "Метод стрельбы")
+print("\n" + "="*50)
+print("МЕТОД СТРЕЛЬБЫ С КОРРЕКТИРОВКОЙ МЕТОДОМ НЬЮТОНА")
+print("="*50)
+
+# Выполнение метода стрельбы с корректировкой Ньютона
+theta_newton, theta_hist_newton, residual_hist_newton = shooting_method_newton_correction(theta_initial)
+
+# Вывод результатов метода стрельбы с Ньютона
+print("\nРезультат метода стрельбы с корректировкой Ньютона:")
+print(f"Угол стрельбы: {np.degrees(theta_newton):.6f}°")
+print(f"Невязка: {residual_hist_newton[-1]:.2e}")
+
+# Проверка решения метода стрельбы с Ньютона
+final_state = integrate_trajectory(theta_newton)[-1]
+print(f"Достигнутая точка: x = {final_state[0]:.3f} м, y = {final_state[1]:.3f} м")
+
+# Объединенная визуализация метода стрельбы с корректировкой Ньютона
+print("\nОбъединенная визуализация метода стрельбы с корректировкой Ньютона...")
+plot_combined_analysis(theta_hist_newton[:min(6, len(theta_hist_newton))], integrate_trajectory,
+                      theta_hist_newton, residual_hist_newton,
+                      x_target, y_target, x_start, y_start,
+                      "Метод стрельбы с корректировкой Ньютона")
+
+# Сравнение результатов
+print("\n" + "="*50)
+print("СРАВНЕНИЕ МЕТОДОВ СТРЕЛЬБЫ")
+print("="*50)
+print(f"Угол стрельбы (regula falsi): {np.degrees(theta_shooting):.6f}°")
+print(f"Угол стрельбы (Ньютон): {np.degrees(theta_newton):.6f}°")
+print(f"Разница углов: {abs(np.degrees(theta_shooting - theta_newton)):.2e}°")
+print(f"Итераций (regula falsi): {len(theta_hist_shooting)}")
+print(f"Итераций (Ньютон): {len(theta_hist_newton)}")
 
 
 """ ## Выводы ## """
 
 """
-## Результаты решения обратной баллистической задачи методом стрельбы
+## Результаты решения обратной баллистической задачи методами стрельбы
 
-Метод стрельбы успешно решил обратную баллистическую задачу, найдя угол стрельбы,
-при котором снаряд попадает точно в цель с учетом сопротивления воздуха и ветра.
+Оба варианта метода стрельбы успешно решили обратную баллистическую задачу,
+найдя угол стрельбы, при котором снаряд попадает точно в цель с учетом
+сопротивления воздуха и ветра.
 
-### Ключевые особенности решения:
+### Сравнение методов стрельбы:
 
-1. **Начальные границы**: Были выбраны углы 10° и 80°, при которых снаряд
-   не долетает до цели, но метод все равно сошелся благодаря свойствам regula falsi
+#### Метод стрельбы с корректировкой regula falsi:
+- **Принцип работы**: Итеративное уточнение угла путем "пристрелки" с разных позиций
+  в заданном интервале, используя метод regula falsi для вычисления следующего кандидата
+- **Достоинства**:
+  - Не требует начального приближения - нужны только границы интервала
+  - Гарантированная сходимость при правильном выборе границ (с разными знаками невязки)
+  - Устойчив к локальным экстремумам
+- **Недостатки**:
+  - Требует большего числа итераций по сравнению с методом Ньютона
+  - Медленнее сходится на последних итерациях
 
-2. **Процесс сходимости**: Метод показал постепенное приближение к правильному углу
-   через последовательные "выстрелы" с корректировкой угла
+#### Метод стрельбы с корректировкой методом Ньютона:
+- **Принцип работы**: Использует начальное приближение угла и корректирует его
+  методом Ньютона, используя информацию о значении функции невязки и ее производной
+  для квадратичной сходимости к решению уравнения f(θ) = 0
+- **Достоинства**:
+  - Быстрая квадратичная сходимость после первых итераций
+  - Минимальное число итераций для достижения высокой точности
+- **Недостатки**:
+  - Требует хорошего начального приближения
+  - Численное дифференцирование может быть неустойчивым
+  - Может расходиться при неудачном выборе начального приближения
 
-3. **Визуализация**: Графики показывают, как каждая итерация приближает траекторию
-   к целевой точке, демонстрируя принцип "пристрелки"
+### Отличие от "классического" метода Ньютона для краевых задач:
 
-4. **Точность**: Метод достиг высокой точности (невязка ~1e-10) за небольшое
-   число итераций
+Классический метод Ньютона для решения краевых задач механики обычно подразумевает
+многошаговый алгоритм, включающий:
+- Дискретизацию задачи (метод конечных разностей или конечных элементов)
+- Решение системы нелинейных уравнений большой размерности
+- Итеративное уточнение решения с использованием якобиана системы
+
+В данном случае мы имеем простую реализацию метода стрельбы с корректировкой Ньютона,
+где метод Ньютона применяется к одномерной функции невязки, а не к полной системе
+дифференциальных уравнений.
+
+### Практические рекомендации:
+
+1. **Выбор метода**:
+   - **Метод стрельбы с regula falsi**: Когда нет хорошего начального приближения
+     или нужно гарантированное решение (требуются границы с разными знаками невязки)
+   - **Метод стрельбы с Ньютона**: Когда есть хорошее начальное приближение
+     и важна быстрая сходимость
+
+2. **Оптимизация**:
+   - Оба метода достигают высокой точности (невязка ~1e-10)
+   - Метод с корректировкой Ньютона обычно требует меньше вычислений при хорошем старте
+   - Метод с regula falsi более надежен при отсутствии априорной информации
+
+3. **Визуализация**:
+   - Графики траекторий показывают эволюцию решения
+   - Графики сходимости демонстрируют скорость приближения к точному решению
+   - Сравнение методов позволяет выбрать оптимальный подход для конкретной задачи
 """
