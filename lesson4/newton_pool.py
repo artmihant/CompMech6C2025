@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # def F(z):
-#     return z**3 - 1
+#     return z**7 - 1
 
 # def dF(z):
-#     return 3*z**2
+#     return 7*z**6
 
 
 def F(x):
