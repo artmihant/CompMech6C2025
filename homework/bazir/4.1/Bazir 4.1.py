@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy.signal import find_peaks
