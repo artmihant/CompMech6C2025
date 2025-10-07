@@ -50,7 +50,7 @@ def PhaseDiagramm(states, derivatives):
     for i, var in enumerate(variables):
         axes[i].plot(states[:, i], derivatives[:, i], lw=0.5)
         axes[i].set_xlabel(var)
-        axes[i].set_ylabel(f"{var}'")
+        axes[i].set_ylabel(f"{var}")
         axes[i].set_title(f"Фазовый портрет ({var}', {var})")
         axes[i].grid(True)
     plt.tight_layout()
