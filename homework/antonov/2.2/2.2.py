@@ -15,67 +15,46 @@ prm_vosem = {# тут нужно G = 1
     'm2' : 1,
     'm3' : 1
 }
-prm_Earth_Sun_Earth = {
-    'r1' : np.array([-1.5e9, 0], dtype=float),
-    'r2' : np.array([ 0, 0], dtype=float),
-    'r3' : np.array([ 1.5e9, 0], dtype=float),
-    'v1' : np.array([0, -5e4], dtype=float),
-    'v2' : np.array([0, 1e5], dtype=float),
-    'v3' : np.array([0,  5e4], dtype=float),
-    'm1' : 5.97e24,
-    'm2' : 5.97e29,
-    'm3' : 5.97e24
+kolcia ={
+    'r1' : np.array([0, 1], dtype=float),
+    'r2' : np.array([-np.cos(np.pi/6), -np.sin(np.pi/6)], dtype=float),
+    'r3' : np.array([ np.cos(np.pi/6), -np.sin(np.pi/6)], dtype=float),
+    'v1' : np.array([-1, 0], dtype=float)*0.5,
+    'v2' : np.array([ np.sin(np.pi/6), -np.cos(np.pi/6)], dtype=float)*0.5,
+    'v3' : np.array([ np.sin(np.pi/6),  np.cos(np.pi/6)], dtype=float)*0.5,
+    'm1' : 1.0,
+    'm2' : 1.0,
+    'm3' : 1.0
 }
-prm_Earth_Earth_Earth = {
-    'r1' : np.array([-1.5e9, 0], dtype=float),
-    'r2' : np.array([ 0, 0], dtype=float),
-    'r3' : np.array([ 1.5e9, 0], dtype=float),
-    'v1' : np.array([0, -5e4], dtype=float),
-    'v2' : np.array([-4e4, 3e4], dtype=float),
-    'v3' : np.array([0,  5e4], dtype=float),
-    'm1' : 5.97e24,
-    'm2' : 5.97e24,
-    'm3' : 5.97e24
+haos ={
+    'r1' : np.array([0, 1], dtype=float),
+    'r2' : np.array([-np.cos(np.pi/6), -np.sin(np.pi/6)], dtype=float),
+    'r3' : np.array([ np.cos(np.pi/6), -np.sin(np.pi/6)], dtype=float),
+    'v1' : np.array([-1, 0], dtype=float)*0.8,
+    'v2' : np.array([ np.sin(np.pi/6), -np.cos(np.pi/6)], dtype=float)*0.8,
+    'v3' : np.array([ np.sin(np.pi/6),  np.cos(np.pi/6)], dtype=float)*0.81,
+    'm1' : 1.0,
+    'm2' : 1.0,
+    'm3' : 1.0
 }
-prm_Sun_Sun_Sun = {
-    'r1' : np.array([-1.5e9, 0], dtype=float),
-    'r2' : np.array([ 0, 0], dtype=float),
-    'r3' : np.array([ 1.5e9, 0], dtype=float),
-    'v1' : np.array([0, -5e4], dtype=float),
-    'v2' : np.array([-3e4, 4e4], dtype=float),
-    'v3' : np.array([0,  5e4], dtype=float),
-    'm1' : 5.97e29,
-    'm2' : 5.97e29,
-    'm3' : 5.97e29
-}
-prm_Earth_Sun_Moon = {
-    'r1' : np.array([-1.49e9, 0], dtype=float),
-    'r2' : np.array([ 0, 0], dtype=float),
-    'r3' : np.array([ -1.4935e9, 0], dtype=float),
-    'v1' : np.array([0, -2.9e4], dtype=float),
-    'v2' : np.array([0, 0], dtype=float),
-    'v3' : np.array([0, -3e4], dtype=float),
-    'm1' : 5.97e24,
-    'm2' : 2e30,
-    'm3' : 5.97e22
-}
-prm_Earth_Sun_Moon = {
-    'r1' : np.array([-149.e9, 0], dtype=float),
-    'r2' : np.array([ 0, 0], dtype=float),
-    'r3' : np.array([ -149.35e9, 0], dtype=float),
-    'v1' : np.array([0, -2.9e4], dtype=float),
-    'v2' : np.array([0, 0], dtype=float),
-    'v3' : np.array([0, -3e4], dtype=float),
-    'm1' : 5.97e24,
-    'm2' : 2e30,
-    'm3' : 5.97e22
+telo_uletelo = {
+    'r1': np.array([1.5, 0.0], dtype=float),
+    'r2': np.array([0.0, -1.0], dtype=float),
+    'r3': np.array([-1.5, 0.0], dtype=float),
+    'v1': np.array([0.0, 0.4], dtype=float),
+    'v2': np.array([0.0, 1], dtype=float),
+    'v3': np.array([0.0, -0.4], dtype=float),
+    'm1': 2.0,    # Массивное тело
+    'm2': 0.1,
+    'm3': 2.0     # Легкое тело
 }
 
+
 # ЗАДАНИЕ НАЧАЛЬНЫХ ПАРАМЕТРОВ
-p = prm_vosem # начальные параметры системы
+p = telo_uletelo # начальные параметры системы
 G = 1  # 6.67430e-11 гравитационная постоянная
 t0 = 0              
-t1 = 5
+t1 = 50
 
 
 #PHYSICS
@@ -103,7 +82,7 @@ print(f"m1 = {m1}, m2 = {m2}, m3 = {m3}")
 print(f"G = {G}")
 
 # NUMERICS
-dt = 0.1                          # шаг по времени
+dt = 0.05                          # шаг по времени
 nsteps = math.ceil((t1 - t0) / dt)  #кол-во шагов
 print(f"Количество шагов: {nsteps}")
 
