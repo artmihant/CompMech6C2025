@@ -24,6 +24,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
+from mpl_toolkits.mplot3d import Axes3D
 
 """ ## Параметры задачи ## """
 
@@ -81,58 +82,16 @@ def set_boundary_conditions(U, case='top_hot'):
         U[:, -1] = 0.0    # правая граница холодная
         U[0, :] = 50.0    # верхняя граница
         U[-1, :] = 50.0   # нижняя граница
-
+    
     elif case == 'corners':
-        # Горячие углы, остальные границы холодные
-        U[0, :] = 0.0
-        U[-1, :] = 0.0
-        U[:, 0] = 0.0
-        U[:, -1] = 0.0
+        U[:, :] = 0.0
+        # Горячие углы
         U[0, 0] = 100.0
         U[0, -1] = 100.0
         U[-1, 0] = 100.0
         U[-1, -1] = 100.0
     
     return U
-
-
-"""  Уравнение Пуассона с источником тепла ## """
-
-def create_heat_source(X, Y, source_type='center_spot'):
-    """
-    Создание функции источника тепла f(x,y)
-    
-    Args:
-        X, Y: координатные сетки
-        source_type: тип источника
-            'center_spot' - горячее пятно в центре
-            'line' - линейный источник
-            'multiple' - несколько источников
-    
-    Returns:
-        f: массив плотности источников тепла
-    """
-    f = np.zeros_like(X)
-    
-    if source_type == 'center_spot':
-        # Гауссово пятно в центре
-        x0, y0 = Lx/2, Ly/2
-        sigma = 0.1
-        f = 100 * np.exp(-((X - x0)**2 + (Y - y0)**2) / (2 * sigma**2))
-    
-    elif source_type == 'line':
-        # Линейный источник (вертикальная линия)
-        mask = (np.abs(X - Lx/2) < 0.05)
-        f[mask] = 50.0
-    
-    elif source_type == 'multiple':
-        # Несколько точечных источников
-        sources = [(0.3, 0.3, 80), (0.7, 0.7, 60), (0.3, 0.7, 40), (0.7, 0.3, 50)]
-        for x0, y0, intensity in sources:
-            sigma = 0.08
-            f += intensity * np.exp(-((X - x0)**2 + (Y - y0)**2) / (2 * sigma**2))
-    
-    return f
 
 
 """ ## Визуализация ## """
@@ -217,7 +176,7 @@ def create_convergence_animation(X, Y, history, method_name='', skip_frames=10):
 
 """ ## 1. Метод Якоби для уравнения Лапласа ## """
 
-def solve_laplace_jacobi(U0, max_iter=5000, tol=1e-4):
+def solve_laplace_jacobi(U0, max_iter=5000, tol=1e-4, save_history=False):
     """
     Решение уравнения Лапласа методом Якоби
     
@@ -230,16 +189,19 @@ def solve_laplace_jacobi(U0, max_iter=5000, tol=1e-4):
         U0: начальное приближение с граничными условиями
         max_iter: максимальное число итераций
         tol: критерий сходимости (max изменение)
+        save_history: сохранять ли историю итераций для анимации
         
     Returns:
         U: решение
         iterations: число выполненных итераций
+        history: список состояний (если save_history=True)
     """
     U_old = U0.copy()
     U_new = U0.copy()
     
     history = []
-    history.append(U_old.copy())
+    if save_history:
+        history.append(U_old.copy())
     
     for iteration in range(max_iter):
         # Обновляем все внутренние точки одновременно
@@ -249,7 +211,7 @@ def solve_laplace_jacobi(U0, max_iter=5000, tol=1e-4):
         # Проверка сходимости
         max_diff = np.max(np.abs(U_new - U_old))
         
-        if iteration % 10 == 0:
+        if save_history and iteration % 10 == 0:
             history.append(U_new.copy())
         
         if max_diff < tol:
@@ -265,21 +227,22 @@ def solve_laplace_jacobi(U0, max_iter=5000, tol=1e-4):
 # Решаем уравнение Лапласа методом Якоби
 
 U0_jacobi = np.zeros((Ny, Nx))
-U0_jacobi = set_boundary_conditions(U0_jacobi, case='corners')
+U0_jacobi = set_boundary_conditions(U0_jacobi, case='top_hot')
 
 U_jacobi, iter_jacobi, history_jacobi = solve_laplace_jacobi(
-    U0_jacobi, max_iter=max_iterations, tol=tolerance
+    U0_jacobi, max_iter=max_iterations, tol=tolerance, save_history=True
 )
 
 plot_temperature_field(X, Y, U_jacobi, title='Метод Якоби: финальное распределение')
 
-anim_jacobi = create_convergence_animation(X, Y, history_jacobi, 
-                                           method_name='Метод Якоби', skip_frames=10)
+# anim_jacobi = create_convergence_animation(X, Y, history_jacobi, 
+#                                            method_name='Метод Якоби', skip_frames=10)
+# HTML(anim_jacobi.to_jshtml())
 
 
 """ ## 2. Метод Гаусса-Зейделя для уравнения Лапласа ## """
 
-def solve_laplace_gauss_seidel(U0, max_iter=5000, tol=1e-4):
+def solve_laplace_gauss_seidel(U0, max_iter=5000, tol=1e-4, save_history=False):
     """
     Решение уравнения Лапласа методом Гаусса-Зейделя
     
@@ -292,15 +255,18 @@ def solve_laplace_gauss_seidel(U0, max_iter=5000, tol=1e-4):
         U0: начальное приближение с граничными условиями
         max_iter: максимальное число итераций
         tol: критерий сходимости
+        save_history: сохранять ли историю итераций
         
     Returns:
         U: решение
         iterations: число итераций
+        history: список состояний (если save_history=True)
     """
     U = U0.copy()
     
     history = []
-    history.append(U.copy())
+    if save_history:
+        history.append(U.copy())
     
     for iteration in range(max_iter):
         U_old = U.copy()
@@ -313,7 +279,7 @@ def solve_laplace_gauss_seidel(U0, max_iter=5000, tol=1e-4):
         # Проверка сходимости
         max_diff = np.max(np.abs(U - U_old))
         
-        if iteration % 5 == 0:
+        if save_history and iteration % 5 == 0:
             history.append(U.copy())
         
         if max_diff < tol:
@@ -330,7 +296,7 @@ U0_gs = np.zeros((Ny, Nx))
 U0_gs = set_boundary_conditions(U0_gs, case='top_hot')
 
 U_gs, iter_gs, history_gs = solve_laplace_gauss_seidel(
-    U0_gs, max_iter=max_iterations, tol=tolerance
+    U0_gs, max_iter=max_iterations, tol=tolerance, save_history=True
 )
 
 plot_temperature_field(X, Y, U_gs, title='Метод Гаусса-Зейделя: финальное распределение')
@@ -342,7 +308,7 @@ plot_temperature_field(X, Y, U_gs, title='Метод Гаусса-Зейделя
 
 """ ## 3. Метод последовательной сверхрелаксации (SOR) ## """
 
-def solve_laplace_sor(U0, omega=1.5, max_iter=5000, tol=1e-4):
+def solve_laplace_sor(U0, omega=1.5, max_iter=5000, tol=1e-4, save_history=False):
     """
     Решение уравнения Лапласа методом SOR
     
@@ -358,15 +324,18 @@ def solve_laplace_sor(U0, omega=1.5, max_iter=5000, tol=1e-4):
         omega: параметр релаксации (1 < ω < 2)
         max_iter: максимальное число итераций
         tol: критерий сходимости
+        save_history: сохранять ли историю
         
     Returns:
         U: решение
         iterations: число итераций
+        history: история (если save_history=True)
     """
     U = U0.copy()
     
     history = []
-    history.append(U.copy())
+    if save_history:
+        history.append(U.copy())
     
     for iteration in range(max_iter):
         U_old = U.copy()
@@ -380,7 +349,7 @@ def solve_laplace_sor(U0, omega=1.5, max_iter=5000, tol=1e-4):
         
         max_diff = np.max(np.abs(U - U_old))
         
-        if iteration % 3 == 0:
+        if save_history and iteration % 3 == 0:
             history.append(U.copy())
         
         if max_diff < tol:
@@ -397,7 +366,7 @@ U0_sor = np.zeros((Ny, Nx))
 U0_sor = set_boundary_conditions(U0_sor, case='top_hot')
 
 U_sor, iter_sor, history_sor = solve_laplace_sor(
-    U0_sor, omega=omega, max_iter=max_iterations, tol=tolerance
+    U0_sor, omega=omega, max_iter=max_iterations, tol=tolerance, save_history=True
 )
 
 plot_temperature_field(X, Y, U_sor, title=f'Метод SOR (ω={omega}): финальное распределение')
@@ -442,86 +411,46 @@ print(f"{'Якоби':<20} {iter_jacobi:<15} {'1.00x'}")
 print(f"{'Гаусс-Зейдель':<20} {iter_gs:<15} {f'{iter_jacobi/iter_gs:.2f}x'}")
 print(f"{'SOR (ω={omega})':<20} {iter_sor:<15} {f'{iter_jacobi/iter_sor:.2f}x'}")
 print("="*60)
-""" ## Уравнение Пуассона: Метод Якоби ## """
 
-def solve_poisson_jacobi(U0, f, dx, dy, max_iter=5000, tol=1e-4):
+
+""" ## 4. Уравнение Пуассона с источником тепла ## """
+
+def create_heat_source(X, Y, source_type='center_spot'):
     """
-    Решение уравнения Пуассона методом Якоби
-    
-    Уравнение: ∇²u = -f(x,y)
-    
-    Схема (dx=dy):
-        U_new[i,j] = 0.25 * (U_old[i+1,j] + U_old[i-1,j] + U_old[i,j+1] + U_old[i,j-1] - f[i,j]*dx²)
+    Создание функции источника тепла f(x,y)
     
     Args:
-        U0: начальное приближение
-        f: функция источника
-        dx, dy: шаги сетки
-        max_iter: максимум итераций
-        tol: критерий сходимости
-        
+        X, Y: координатные сетки
+        source_type: тип источника
+            'center_spot' - горячее пятно в центре
+            'line' - линейный источник
+            'multiple' - несколько источников
+    
     Returns:
-        U: решение
-        iterations: число итераций
+        f: массив плотности источников тепла
     """
-    U_old = U0.copy()
-    U_new = U0.copy()
+    f = np.zeros_like(X)
     
-    for iteration in range(max_iter):
-        U_new[1:-1, 1:-1] = 0.25 * (
-            U_old[2:, 1:-1] + U_old[:-2, 1:-1] + U_old[1:-1, 2:] + U_old[1:-1, :-2] - f[1:-1, 1:-1] * dx**2
-        )
-        
-        max_diff = np.max(np.abs(U_new - U_old))
-        if max_diff < tol:
-            print(f"Пуассон-Якоби: сошёлся за {iteration + 1} итераций (max_diff = {max_diff:.2e})")
-            return U_new, iteration + 1
-        U_old = U_new.copy()
+    if source_type == 'center_spot':
+        # Гауссово пятно в центре
+        x0, y0 = Lx/2, Ly/2
+        sigma = 0.1
+        f = 100 * np.exp(-((X - x0)**2 + (Y - y0)**2) / (2 * sigma**2))
     
-    print(f"Пуассон-Якоби: достигнуто максимальное число итераций ({max_iter})")
-    return U_new, max_iter
+    elif source_type == 'line':
+        # Линейный источник (вертикальная линия)
+        mask = (np.abs(X - Lx/2) < 0.05)
+        f[mask] = 50.0
+    
+    elif source_type == 'multiple':
+        # Несколько точечных источников
+        sources = [(0.3, 0.3, 80), (0.7, 0.7, 60), (0.3, 0.7, 40), (0.7, 0.3, 50)]
+        for x0, y0, intensity in sources:
+            sigma = 0.08
+            f += intensity * np.exp(-((X - x0)**2 + (Y - y0)**2) / (2 * sigma**2))
+    
+    return f
 
-
-""" ## Уравнение Пуассона: Метод Гаусса-Зейделя ## """
-
-def solve_poisson_gauss_seidel(U0, f, dx, dy, max_iter=5000, tol=1e-4):
-    """
-    Решение уравнения Пуассона методом Гаусса-Зейделя
-    
-    Уравнение: ∇²u = -f(x,y)
-    
-    Схема (dx=dy):
-        U[i,j] = 0.25 * (U[i+1,j] + U[i-1,j] + U[i,j+1] + U[i,j-1] - f[i,j]*dx²)
-    
-    Args:
-        U0: начальное приближение
-        f: функция источника
-        dx, dy: шаги сетки
-        max_iter: максимум итераций
-        tol: критерий сходимости
-        
-    Returns:
-        U: решение
-        iterations: число итераций
-    """
-    U = U0.copy()
-    
-    for iteration in range(max_iter):
-        U_prev = U.copy()
-        for i in range(1, Ny - 1):
-            for j in range(1, Nx - 1):
-                U[i, j] = 0.25 * (U[i+1, j] + U[i-1, j] + U[i, j+1] + U[i, j-1] - f[i, j] * dx**2)
-        
-        max_diff = np.max(np.abs(U - U_prev))
-        if max_diff < tol:
-            print(f"Пуассон-Гаусс-Зейдель: сошёлся за {iteration + 1} итераций (max_diff = {max_diff:.2e})")
-            return U, iteration + 1
-    
-    print(f"Пуассон-Гаусс-Зейдель: достигнуто максимальное число итераций ({max_iter})")
-    return U, max_iter
-
-
-""" ## Уравнение Пуассона: Метод SOR ## """
 
 def solve_poisson_sor(U0, f, dx, dy, omega=1.5, max_iter=5000, tol=1e-4):
     """
@@ -566,88 +495,68 @@ def solve_poisson_sor(U0, f, dx, dy, omega=1.5, max_iter=5000, tol=1e-4):
     return U, max_iter
 
 
-""" ## Уравнение Пуассона: Запуск трёх методов и сравнение ## """
+# Решаем уравнение Пуассона с источником в центре
 
-# Источник тепла (центр)
+print("\n" + "="*60)
+print("УРАВНЕНИЕ ПУАССОНА С ИСТОЧНИКОМ ТЕПЛА")
+print("="*60)
+
 f_center = create_heat_source(X, Y, source_type='center_spot')
 
-# Единые граничные условия: все границы холодные (0)
-U0_poisson_base = np.zeros((Ny, Nx))
-U0_poisson_base[:, :] = 0.0
+U0_poisson = np.zeros((Ny, Nx))
+# Холодные границы
+U0_poisson = set_boundary_conditions(U0_poisson, case='top_hot')
+U0_poisson[0, :] = 0.0  # все границы холодные
 
-# Якоби
-U0_p_j = U0_poisson_base.copy()
-U_p_jacobi, iter_p_jacobi = solve_poisson_jacobi(
-    U0_p_j, f_center, dx, dy, max_iter=max_iterations, tol=tolerance
+U_poisson, iter_poisson = solve_poisson_sor(
+    U0_poisson, f_center, dx, dy, omega=omega, max_iter=max_iterations, tol=tolerance
 )
 
-# Гаусс–Зейдель
-U0_p_gs = U0_poisson_base.copy()
-U_p_gs, iter_p_gs = solve_poisson_gauss_seidel(
-    U0_p_gs, f_center, dx, dy, max_iter=max_iterations, tol=tolerance
-)
-
-# SOR
-U0_p_sor = U0_poisson_base.copy()
-U_p_sor, iter_p_sor = solve_poisson_sor(
-    U0_p_sor, f_center, dx, dy, omega=omega, max_iter=max_iterations, tol=tolerance
-)
-
-# Визуализация источника и трёх решений
-fig, axes = plt.subplots(1, 4, figsize=(20, 4))
+# Визуализация источника и решения
+fig, axes = plt.subplots(1, 3, figsize=(16, 4))
 
 # Источник тепла
-im0 = axes[0].contourf(X, Y, f_center, levels=20, cmap='Reds')
+im1 = axes[0].contourf(X, Y, f_center, levels=20, cmap='Reds')
 axes[0].set_xlabel('x, м', fontsize=12)
 axes[0].set_ylabel('y, м', fontsize=12)
-axes[0].set_title('Источник f(x,y)', fontsize=14, weight='bold')
+axes[0].set_title('Источник тепла f(x,y)', fontsize=14, weight='bold')
 axes[0].set_aspect('equal')
-plt.colorbar(im0, ax=axes[0], label='Плотность, Вт/м²')
+plt.colorbar(im1, ax=axes[0], label='Плотность, Вт/м²')
 
-im1 = axes[1].contourf(X, Y, U_p_jacobi, levels=20, cmap='hot')
-axes[1].set_title(f'Пуассон: Якоби\n{iter_p_jacobi} итераций', fontsize=12)
+# Решение 2D
+im2 = axes[1].contourf(X, Y, U_poisson, levels=20, cmap='hot')
+axes[1].set_xlabel('x, м', fontsize=12)
+axes[1].set_ylabel('y, м', fontsize=12)
+axes[1].set_title('Распределение температуры', fontsize=14, weight='bold')
 axes[1].set_aspect('equal')
-plt.colorbar(im1, ax=axes[1], label='T, °C')
+plt.colorbar(im2, ax=axes[1], label='Температура, °C')
 
-im2 = axes[2].contourf(X, Y, U_p_gs, levels=20, cmap='hot')
-axes[2].set_title(f'Пуассон: Гаусс-Зейдель\n{iter_p_gs} итераций', fontsize=12)
-axes[2].set_aspect('equal')
-plt.colorbar(im2, ax=axes[2], label='T, °C')
-
-im3 = axes[3].contourf(X, Y, U_p_sor, levels=20, cmap='hot')
-axes[3].set_title(f'Пуассон: SOR (ω={omega})\n{iter_p_sor} итераций', fontsize=12)
-axes[3].set_aspect('equal')
-plt.colorbar(im3, ax=axes[3], label='T, °C')
+# 3D вид
+from mpl_toolkits.mplot3d import Axes3D
+ax3d = fig.add_subplot(133, projection='3d')
+surf = ax3d.plot_surface(X, Y, U_poisson, cmap='hot', edgecolor='none', alpha=0.8)
+ax3d.set_xlabel('x, м', fontsize=10)
+ax3d.set_ylabel('y, м', fontsize=10)
+ax3d.set_zlabel('T, °C', fontsize=10)
+ax3d.set_title('3D вид', fontsize=14, weight='bold')
+plt.colorbar(surf, ax=ax3d, shrink=0.5)
 
 plt.tight_layout()
 plt.show()
 
-# Сравнение числа итераций
-fig, ax = plt.subplots(figsize=(8, 5))
-methods_p = ['Якоби', 'Гаусс-Зейдель', f'SOR (ω={omega})']
-iters_p = [iter_p_jacobi, iter_p_gs, iter_p_sor]
-colors_p = ['blue', 'green', 'red']
 
-bars = ax.bar(methods_p, iters_p, color=colors_p, alpha=0.7, edgecolor='black', linewidth=2)
-for bar, itc in zip(bars, iters_p):
-    ax.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{itc}',
-            ha='center', va='bottom', fontsize=12, weight='bold')
-
-ax.set_ylabel('Число итераций', fontsize=12)
-ax.set_title('Уравнение Пуассона: сравнение скорости сходимости', fontsize=13, weight='bold')
-ax.grid(axis='y', alpha=0.3)
-plt.tight_layout()
-plt.show()
-
-
-""" ## Уравнение Пуассона: несколько источников (для SOR) ## """
+# Пример с несколькими источниками
 
 f_multiple = create_heat_source(X, Y, source_type='multiple')
+
 U0_multi = np.zeros((Ny, Nx))
+
 U_multi, iter_multi = solve_poisson_sor(
     U0_multi, f_multiple, dx, dy, omega=omega, max_iter=max_iterations, tol=tolerance
 )
-plot_temperature_field(X, Y, U_multi, title='Пуассон (SOR): несколько источников тепла')
+
+plot_temperature_field(X, Y, U_multi, 
+                      title='Уравнение Пуассона: несколько источников тепла')
 
 
 """ ## Исследование оптимального параметра релаксации ## """
@@ -732,4 +641,89 @@ plt.show()
 print(f"\nОптимальное значение: ω = {optimal_omega:.3f}")
 print(f"Число итераций: {optimal_iters}")
 print(f"Ускорение относительно Гаусса-Зейделя: {iter_gs/optimal_iters:.2f}x")
+
+
+r"""
+## Выводы ##
+"""
+
+r"""
+### Основные результаты:
+
+1. **Природа эллиптических уравнений**
+   - Описывают **равновесные (стационарные)** состояния систем
+   - Нет производной по времени - решение не эволюционирует
+   - Ответ на вопрос: "Каким будет финальное состояние?"
+   - **Физический смысл**: в каждой точке значение = среднее от соседей
+
+2. **Уравнение Лапласа**: $\nabla^2 u = 0$
+   - Система без источников и стоков
+   - Примеры: натянутая мембрана, электростатика в вакууме
+   - Дискретная формула: $u_{i,j} = \frac{1}{4}(u_{i+1,j} + u_{i-1,j} + u_{i,j+1} + u_{i,j-1})$
+
+3. **Уравнение Пуассона**: $\nabla^2 u = -f(x,y)$
+   - Система с источниками (функция $f$)
+   - Примеры: теплопроводность с нагревателями, электростатика с зарядами
+   - Дискретная формула добавляет член источника: $+ f_{i,j} \Delta x^2 / 4$
+
+### Сравнение итерационных методов:
+
+1. **Метод Якоби**
+   - ➕ Простота реализации
+   - ➕ Легко распараллеливается (все точки обновляются независимо)
+   - ➖ **Медленная сходимость** (базовый уровень)
+   - Применение: распределенные вычисления на GPU/кластерах
+
+2. **Метод Гаусса-Зейделя**
+   - ➕ **В ~2 раза быстрее** Якоби
+   - ➕ Использует уже обновленные значения из текущей итерации
+   - ➖ Плохо распараллеливается (последовательный обход)
+   - Применение: последовательные вычисления на CPU
+
+3. **Метод SOR (Successive Over-Relaxation)**
+   - ➕ **В 3-5 раз быстрее** Гаусса-Зейделя при оптимальном $\omega$
+   - ➕ "Усиленная" версия: делаем шаг больше, чем подсказывает Гаусс-Зейдель
+   - ⚠️ Требует подбора параметра $\omega$ (обычно $1 < \omega < 2$)
+   - ⚠️ При неправильном $\omega$ может расходиться
+   - Применение: когда нужна максимальная скорость на одном CPU
+
+### Ключевые формулы метода SOR:
+
+$$u_{i,j}^{new} = u_{i,j}^{old} + \omega (u_{i,j}^{GS} - u_{i,j}^{old})$$
+
+где $u_{i,j}^{GS}$ - значение по методу Гаусса-Зейделя
+
+- При $\omega = 1$ → метод Гаусса-Зейделя
+- При $\omega < 1$ → недостаточная релаксация (замедление)
+- При $1 < \omega < 2$ → сверхрелаксация (ускорение)
+- При $\omega > 2$ → обычно расходится
+
+### Практические рекомендации:
+
+1. **Для быстрого решения на одном CPU**: используйте SOR с $\omega \approx 1.5$
+2. **Для больших задач на GPU/кластере**: используйте Якоби
+3. **Для гарантированной сходимости**: начните с Гаусса-Зейделя ($\omega = 1$)
+4. **Оптимизация $\omega$**: протестируйте диапазон 1.3-1.9 для вашей задачи
+
+### Универсальность подхода:
+
+Алгоритмы, реализованные на этом занятии, с минимальными изменениями применимы к:
+- **Электростатике**: расчет потенциала $\phi$ между электродами
+- **Механике**: прогиб мембраны/пластины под нагрузкой  
+- **Гидродинамике**: стационарное течение вязкой жидкости
+- **Диффузии**: установившееся распределение концентрации
+
+**Математика одна - физика разная!**
+
+### Связь с другими типами уравнений:
+
+- **Параболические** (урок 6): $\frac{\partial u}{\partial t} = \nabla^2 u$ 
+  При $t \to \infty$ решение стремится к решению эллиптического уравнения!
+  
+- **Гиперболические** (урок 7): $\frac{\partial^2 u}{\partial t^2} = c^2 \nabla^2 u$
+  Волновое уравнение содержит тот же оператор Лапласа
+
+Эллиптические уравнения - это **предел** параболических при $t \to \infty$. 
+Итерационные методы имитируют этот процесс релаксации к равновесию!
+"""
 
