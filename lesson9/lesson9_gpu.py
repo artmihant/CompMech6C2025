@@ -466,9 +466,9 @@ anim = matplotlib.animation.FuncAnimation(
     blit=True     # blitting ускоряет отрисовку
 )
 
-plt.show()
+# plt.show()
 
-# from IPython.display import HTML
-# HTML(anim.to_html5_video())
+from IPython.display import HTML
+HTML(anim.to_html5_video())
 
 
