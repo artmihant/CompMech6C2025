@@ -16,13 +16,15 @@ import numba as nb
 
 """ Зададим константы и свойства задачи """
 
+STEPS_PER_FRAME = 100
+
 Viscosity = 0.01                                # кинематическая вязкость жидкости, м²/с
 Height, Width = 80, 200                         # размеры решетки (узлов по y и x)
 
 BarrierCenter = Height//2, Height//2            # центр круглого препятствия
 BarrierRadius = Height//10                      # радиус препятствия
 
-U0 = np.array([0.10, 0])                        # начальная скорость потока (в долях скорости звука)
+U0 = np.array([0.1, 0])                        # начальная скорость потока (в долях скорости звука)
 
 # Инициализация макроскопических полей (текущее состояние)
 Ux  = np.zeros((Height, Width)) + U0[0]        # поле скорости по x
@@ -239,7 +241,6 @@ def iter(f, f_out, barrier):
         f_out: распределение на границах (для входа/выхода потока)
         barrier: маски барьера для bounce-back
     """
-    now = time.time()
 
     # ============= ЭТАП 1: STREAMING (ПЕРЕНОС) =============
     # Распаковываем 9 направлений распределения
@@ -314,8 +315,6 @@ def iter(f, f_out, barrier):
     f[:,-1,:] = f_out[:,-1,:]  # правая граница (выход потока)
     f[:,:,0]  = f_out[:,:,0]   # нижняя граница
     f[:,:,-1] = f_out[:,:,-1]  # верхняя граница
-    
-    print(time.time()-now)  # выводим время выполнения одной итерации
 
 def curl(ux, uy):
     """ 
@@ -334,67 +333,56 @@ def curl(ux, uy):
     """
     return np.roll(uy,-1,axis=1) - np.roll(uy,1,axis=1) - np.roll(ux,-1,axis=0) + np.roll(ux,1,axis=0)
 
-def main():
+# Инициализация геометрии барьера
+barrier = InitBarrier()
+
+# Инициализация функции распределения из равновесного состояния
+F = F_stat(Ux, Uy, Rho)
+
+# Фиксированное распределение для граничных условий (постоянный поток)
+F_out = F_stat(Ux, Uy, Rho)
+
+# ========== НАСТРОЙКА ВИЗУАЛИЗАЦИИ ==========
+fig, ax = plt.subplots()
+
+# Визуализируем завихренность (показывает вихри)
+# Используем цветовую карту jet с нормировкой от -0.1 до 0.1
+fluidImage = ax.imshow(curl(Ux, Uy), origin='lower', norm=plt.Normalize(-.1,.1), 
+                                    cmap=plt.get_cmap('jet'), interpolation='none')
+
+# Визуализируем барьер полупрозрачным серым цветом
+bImageArray = np.zeros((Height, Width, 4), np.uint8)
+bImageArray[barrier[4],3] = 100  # альфа-канал (прозрачность) для барьера
+barrierImage = plt.imshow(bImageArray, origin='lower', interpolation='none')
+
+
+def nextFrame(_):
     """
-    Главная функция: инициализация и запуск симуляции с визуализацией.
+    Функция обновления кадра анимации.
+    Вызывается автоматически для каждого нового кадра.
     """
-    
-    # Инициализация геометрии барьера
-    barrier = InitBarrier()
-
-    # Инициализация функции распределения из равновесного состояния
-    F = F_stat(Ux, Uy, Rho)
-
-    # Фиксированное распределение для граничных условий (постоянный поток)
-    F_out = F_stat(Ux, Uy, Rho)
-
-    # Прогреваем систему: делаем 100 итераций до начала визуализации
-    # Это позволяет потоку установиться и развить вихри Кармана
-    for _ in range(100):
+    # Измеряем время вычисления одного кадра (STEPS_PER_FRAME итераций)
+    t0 = time.time()
+    for _ in range(STEPS_PER_FRAME):
         iter(F, F_out, barrier)
+    frame_dt = time.time() - t0
+    print(f"CPU frame: {frame_dt:.6f} s for {STEPS_PER_FRAME} steps ({frame_dt/STEPS_PER_FRAME:.6e} s/step)")
 
-    # ========== НАСТРОЙКА ВИЗУАЛИЗАЦИИ ==========
-    fig, ax = plt.subplots()
+    # Вычисляем текущие макроскопические поля
+    Rho = Mode0(F)
+    Ux, Uy = Mode1(F)
 
-    # Визуализируем завихренность (показывает вихри)
-    # Используем цветовую карту jet с нормировкой от -0.1 до 0.1
-    fluidImage = ax.imshow(curl(Ux, Uy), origin='lower', norm=plt.Normalize(-.1,.1), 
-                                        cmap=plt.get_cmap('jet'), interpolation='none')
+    # E = Mode2(F)  # Тензор напряжений (не используется в данной визуализации)
+    Ux /= Rho
+    Uy /= Rho
 
-    # Визуализируем барьер полупрозрачным серым цветом
-    bImageArray = np.zeros((Height, Width, 4), np.uint8)
-    bImageArray[barrier[4],3] = 100  # альфа-канал (прозрачность) для барьера
-    barrierImage = plt.imshow(bImageArray, origin='lower', interpolation='none')
+    # Обновляем изображение завихренности
+    fluidImage.set_array(curl(Ux, Uy))
+    return (fluidImage, barrierImage)        
 
-
-    def nextFrame(_):
-        """
-        Функция обновления кадра анимации.
-        Вызывается автоматически для каждого нового кадра.
-        """
-        
-        # Делаем 40 временных шагов между кадрами (для ускорения визуализации)
-        for _ in range(40):
-            iter(F, F_out, barrier)
-
-        # Вычисляем текущие макроскопические поля
-        Rho = Mode0(F)
-        Ux, Uy = Mode1(F)
-
-        # E = Mode2(F)  # Тензор напряжений (не используется в данной визуализации)
-        Ux /= Rho
-        Uy /= Rho
-
-        # Обновляем изображение завихренности
-        fluidImage.set_array(curl(Ux, Uy))
-        return (fluidImage, barrierImage)        
-
-    # Создаем анимацию
-    animate = matplotlib.animation.FuncAnimation(fig, nextFrame, interval=1, blit=True)
-    plt.show()
+# Создаем анимацию
+animate = matplotlib.animation.FuncAnimation(fig, nextFrame, interval=20, blit=True)
+plt.show()
 
 
-
-if __name__ == '__main__':
-    main()
 

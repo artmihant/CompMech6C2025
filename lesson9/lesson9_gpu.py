@@ -16,13 +16,16 @@ from numba import cuda
 
 """ Зададим константы и свойства задачи """
 
+NUM_FRAMES = 200  # Количество кадров в итоговой анимации
+STEPS_PER_FRAME = 50  # Сколько шагов расчета делать между кадрами анимации
+
 Viscosity = 0.01                                # кинематическая вязкость жидкости, м²/с
 Height, Width = 80, 200                         # размеры решетки (узлов по y и x)
 
 BarrierCenter = Height//2, Height//2            # центр круглого препятствия
 BarrierRadius = Height//10                      # радиус препятствия
 
-U0 = np.array([0.10, 0])                        # начальная скорость потока (в долях скорости звука)
+U0 = np.array([0.1, 0])                        # начальная скорость потока (в долях скорости звука)
 
 # Инициализация макроскопических полей (текущее состояние)
 Ux  = np.zeros((Height, Width)) + U0[0]        # поле скорости по x
@@ -79,6 +82,7 @@ V = np.array([
     [-1,-1],[ 0,-1],[ 1,-1]    # NW, N, NE (верхний ряд -> на самом деле это нижний в индексации)
 ])
 
+#
 # Весовые коэффициенты для равновесного распределения
 # Зависят от нормы вектора скорости: |v|=0 -> 4/9, |v|=1 -> 1/9, |v|=√2 -> 1/36
 W = np.array([
@@ -87,12 +91,56 @@ W = np.array([
     1/36, 1/9, 1/36    # диагональные направления (|v|=√2)
 ])
 
+# Массив индексов противоположных направлений для bounce-back
+# 0 <-> 8, 1 <-> 7, 2 <-> 6, 3 <-> 5, 4 <-> 4
+Opposite = np.array([8, 7, 6, 5, 4, 3, 2, 1, 0], dtype=np.int32)
+
 C = 1/3**0.5  # Скорость звука в решеточных единицах: c_s = 1/√3 ≈ 0.577
 
 
 # Переносим константы на устройство (GPU)
 V_device = cuda.to_device(V)
 W_device = cuda.to_device(W)
+Opposite_device = cuda.to_device(Opposite)
+
+
+@cuda.jit
+def lbm_stream_bounce_kernel(f_in, f_out, barrierC, V_dev, Opp_dev, height, width):
+    """
+    CUDA-ядро для шага STREAMING + BOUNCE-BACK.
+
+    Используем схему «pull»: каждая нить вычисляет новые значения
+    для одной ячейки (y, x) во всех направлениях q.
+    """
+    y, x = cuda.grid(2)
+    if y >= height or x >= width:
+        return
+
+    # Твердый узел: все распределения здесь нам не нужны
+    if barrierC[y, x]:
+        for q in range(Q):
+            f_out[q, y, x] = 0.0
+        return
+
+    for q in range(Q):
+        vx = V_dev[q, 0]
+        vy = V_dev[q, 1]
+
+        # Координаты узла, из которого "приходит" частица
+        ys = y - vy
+        xs = x - vx
+
+        if (ys >= 0) and (ys < height) and (xs >= 0) and (xs < width):
+            # Если соседний узел — твердое препятствие, реализуем half-way bounce-back:
+            # поток, который должен был прийти из твердого узла,
+            # заменяем на отраженный из противоположного направления в том же узле.
+            if barrierC[ys, xs]:
+                qo = Opp_dev[q]
+                f_out[q, y, x] = f_in[qo, y, x]
+            else:
+                f_out[q, y, x] = f_in[q, ys, xs]
+        # Если вышли за пределы области — значение будет позже
+        # переопределено граничными условиями.
 
 
 @cuda.jit
@@ -100,12 +148,6 @@ def lbm_collision_kernel(f, tau, V_dev, W_dev, height, width):
     """
     CUDA-ядро для шага столкновения (collision) в методе LBM.
     Каждая нить обрабатывает одну ячейку решетки (y, x).
-
-    Args:
-        f: массив распределений на устройстве формы [Q, Height, Width]
-        tau: время релаксации
-        V_dev, W_dev: массивы скоростей и весов на устройстве
-        height, width: размеры решетки
     """
     y, x = cuda.grid(2)
     if y >= height or x >= width:
@@ -122,6 +164,10 @@ def lbm_collision_kernel(f, tau, V_dev, W_dev, height, width):
         ux += fi * V_dev[q, 0]
         uy += fi * V_dev[q, 1]
 
+    # Защита от деления на ноль (на всякий случай)
+    if rho <= 0.0:
+        return
+
     ux /= rho
     uy /= rho
 
@@ -134,6 +180,30 @@ def lbm_collision_kernel(f, tau, V_dev, W_dev, height, width):
         uv = (vx * ux + vy * uy) / (C * C)
         feq = rho * W_dev[q] * (1.0 + uv + 0.5 * uv * uv - 0.5 * u2)
         f[q, y, x] += (feq - f[q, y, x]) / tau
+
+
+@cuda.jit
+def lbm_boundary_kernel(f, f_out, height, width):
+    """
+    CUDA-ядро для наложения граничных условий на входе/выходе области.
+    """
+    y, x = cuda.grid(2)
+    if y >= height or x >= width:
+        return
+
+    for q in range(Q):
+        # левая граница (вход потока)
+        if x == 0:
+            f[q, y, 0] = f_out[q, y, 0]
+        # правая граница (выход потока)
+        if x == width - 1:
+            f[q, y, width - 1] = f_out[q, y, width - 1]
+        # нижняя граница
+        if y == 0:
+            f[q, 0, x] = f_out[q, 0, x]
+        # верхняя граница
+        if y == height - 1:
+            f[q, height - 1, x] = f_out[q, height - 1, x]
 
 
 def InitBarrier():
@@ -273,96 +343,9 @@ def Mode2(f):
 
 def iter(f, f_out, barrier):
     """
-    Один временной шаг алгоритма LBM.
-    
-    Состоит из трех основных этапов:
-    1. STREAMING: перенос частиц в соседние узлы согласно их скоростям
-    2. BOUNDARY CONDITIONS: обработка граничных условий (bounce-back на барьере)
-    3. COLLISION: релаксация к равновесному распределению (моделирует вязкость)
-    
-    Args:
-        f: текущее распределение (массив из 9 компонент)
-        f_out: распределение на границах (для входа/выхода потока)
-        barrier: маски барьера для bounce-back
+    CPU-реализация шага LBM оставлена для справки (не используется в GPU-анимации).
     """
-    now = time.time()
-
-    # ============= ЭТАП 1: STREAMING (ПЕРЕНОС) =============
-    # Распаковываем 9 направлений распределения
-    (fNW, fN, fNE, fW, fC, fE, fSW, fS, fSE) = f
-
-    # Перенос частиц в направлении NORTH (вверх по y)
-    # Сдвигаем все значения на один узел вверх
-    for y in range(Height-1,0,-1):
-        fN[y]  = fN[y-1]
-        fNE[y] = fNE[y-1]
-        fNW[y] = fNW[y-1]
-
-    # Перенос частиц в направлении SOUTH (вниз по y)
-    fS[:-1]  = fS[1:]
-    fSE[:-1] = fSE[1:]
-    fSW[:-1] = fSW[1:]
-
-    # Перенос частиц в направлении EAST (вправо по x)
-    fE[:,1:]  = fE[:,:-1]
-    fNE[:,1:] = fNE[:,:-1]
-    fSE[:,1:] = fSE[:,:-1]
-
-    # Перенос частиц в направлении WEST (влево по x)
-    fW[:,:-1]  = fW[:,1:]
-    fNW[:,:-1] = fNW[:,1:]
-    fSW[:,:-1] = fSW[:,1:]
-    
-    # fC (центральная компонента) не двигается, т.к. v = 0
-
-    # ============= ЭТАП 2: ГРАНИЧНЫЕ УСЛОВИЯ НА БАРЬЕРЕ (BOUNCE-BACK) =============
-    # Bounce-back: частица, столкнувшаяся со стенкой, отражается в противоположном направлении
-    # Если частица двигалась на север и попала в стенку, она отразится на юг, и наоборот
-    (bNW, bN, bNE, bW, bC, bE, bSW, bS, bSE) = barrier
-
-    # Отражение противоположных направлений:
-    # N ↔ S (север-юг)
-    fN[bN]   = fS[bC]
-    fS[bS]   = fN[bC]
-    # E ↔ W (восток-запад)
-    fE[bE]   = fW[bC]
-    fW[bW]   = fE[bC]
-    # Диагонали: NE ↔ SW и NW ↔ SE
-    fNE[bNE] = fSW[bC]
-    fNW[bNW] = fSE[bC]
-    fSE[bSE] = fNW[bC]
-    fSW[bSW] = fNE[bC]
-
-    # ============= ЭТАП 3: COLLISION (СТОЛКНОВЕНИЕ, GPU) =============
-    # Приближение BGK (Bhatnagar-Gross-Krook): одновременная релаксация к равновесию
-    # Реализуем этот шаг на GPU с помощью CUDA-ядра.
-    # Вязкость связана с временем релаксации: ν = c_s^2 * (τ - 0.5)
-    tau = 0.5 + Viscosity/C**2  # время релаксации
-
-    # Переносим распределение на устройство
-    f_device_step = cuda.to_device(f)
-
-    # Настраиваем сетку потоков: по одному потоку на узел решетки
-    threadsperblock = (16, 16)
-    blockspergrid_y = (Height + threadsperblock[0] - 1) // threadsperblock[0]
-    blockspergrid_x = (Width + threadsperblock[1] - 1) // threadsperblock[1]
-    blockspergrid = (blockspergrid_y, blockspergrid_x)
-
-    # Запускаем CUDA-ядро: один шаг столкновения для всех узлов
-    lbm_collision_kernel[blockspergrid, threadsperblock](f_device_step, tau, V_device, W_device, Height, Width)
-
-    # Копируем результат обратно на хост
-    f[:] = f_device_step.copy_to_host()
-    
-    # ============= ЭТАП 4: ГРАНИЧНЫЕ УСЛОВИЯ НА ВХОДЕ/ВЫХОДЕ =============
-    # Фиксируем распределение на границах области (периодические или постоянный поток)
-    
-    f[:,0,:]  = f_out[:,0,:]   # левая граница (вход потока)
-    f[:,-1,:] = f_out[:,-1,:]  # правая граница (выход потока)
-    f[:,:,0]  = f_out[:,:,0]   # нижняя граница
-    f[:,:,-1] = f_out[:,:,-1]  # верхняя граница
-    
-    print(time.time()-now)  # выводим время выполнения одной итерации
+    raise NotImplementedError("В GPU-версии используем только CUDA-ядра, функция iter не вызывается.")
 
 def curl(ux, uy):
     """ 
@@ -381,67 +364,111 @@ def curl(ux, uy):
     """
     return np.roll(uy,-1,axis=1) - np.roll(uy,1,axis=1) - np.roll(ux,-1,axis=0) + np.roll(ux,1,axis=0)
 
-def main():
+"""
+Главная функция: инициализация и запуск симуляции с визуализацией.
+"""
+
+# Инициализация геометрии барьера
+barrier = InitBarrier()
+
+# Инициализация функции распределения из равновесного состояния (на хосте)
+F = F_stat(Ux, Uy, Rho)
+
+# Фиксированное распределение для граничных условий (постоянный поток, хост)
+F_out = F_stat(Ux, Uy, Rho)
+
+# Маска твердого препятствия (центральная)
+barrierC = barrier[4]
+
+# --- Подготовка данных на устройстве (GPU) ---
+F_device = cuda.to_device(F)
+F_tmp_device = cuda.device_array_like(F)
+F_out_device = cuda.to_device(F_out)
+barrierC_device = cuda.to_device(barrierC)
+
+# Настройки сетки CUDA: по одному потоку на узел решетки
+threadsperblock = (16, 16)
+blockspergrid_y = (Height + threadsperblock[0] - 1) // threadsperblock[0]
+blockspergrid_x = (Width + threadsperblock[1] - 1) // threadsperblock[1]
+blockspergrid = (blockspergrid_y, blockspergrid_x)
+
+# Время релаксации (постоянное)
+tau = 0.5 + Viscosity/C**2
+
+# ========== НАСТРОЙКА ВИЗУАЛИЗАЦИИ ==========
+fig, ax = plt.subplots()
+
+# Визуализируем завихренность (показывает вихри)
+# Используем цветовую карту jet с нормировкой от -0.1 до 0.1
+fluidImage = ax.imshow(curl(Ux, Uy), origin='lower', norm=plt.Normalize(-.1,.1), 
+                                    cmap=plt.get_cmap('jet'), interpolation='none')
+
+# Визуализируем барьер полупрозрачным серым цветом
+bImageArray = np.zeros((Height, Width, 4), np.uint8)
+bImageArray[barrier[4],3] = 100  # альфа-канал (прозрачность) для барьера
+barrierImage = plt.imshow(bImageArray, origin='lower', interpolation='none')
+
+
+def nextFrame(_):
     """
-    Главная функция: инициализация и запуск симуляции с визуализацией.
+    Функция обновления кадра анимации.
+    Вызывается автоматически для каждого нового кадра.
     """
-    
-    # Инициализация геометрии барьера
-    barrier = InitBarrier()
+    global F_device, F_tmp_device
 
-    # Инициализация функции распределения из равновесного состояния
-    F = F_stat(Ux, Uy, Rho)
+    # Измеряем время вычисления одного кадра (STEPS_PER_FRAME итераций) на GPU
+    t0 = time.time()
 
-    # Фиксированное распределение для граничных условий (постоянный поток)
-    F_out = F_stat(Ux, Uy, Rho)
+    for _ in range(STEPS_PER_FRAME):
+        # STREAMING + BOUNCE-BACK
+        lbm_stream_bounce_kernel[blockspergrid, threadsperblock](
+            F_device, F_tmp_device, barrierC_device, V_device, Opposite_device,
+            Height, Width
+        )
 
-    # Прогреваем систему: делаем 100 итераций до начала визуализации
-    # Это позволяет потоку установиться и развить вихри Кармана
-    for _ in range(100):
-        iter(F, F_out, barrier)
+        # COLLISION
+        lbm_collision_kernel[blockspergrid, threadsperblock](
+            F_tmp_device, tau, V_device, W_device, Height, Width
+        )
 
-    # ========== НАСТРОЙКА ВИЗУАЛИЗАЦИИ ==========
-    fig, ax = plt.subplots()
+        # ГРАНИЧНЫЕ УСЛОВИЯ
+        lbm_boundary_kernel[blockspergrid, threadsperblock](
+            F_tmp_device, F_out_device, Height, Width
+        )
 
-    # Визуализируем завихренность (показывает вихри)
-    # Используем цветовую карту jet с нормировкой от -0.1 до 0.1
-    fluidImage = ax.imshow(curl(Ux, Uy), origin='lower', norm=plt.Normalize(-.1,.1), 
-                                        cmap=plt.get_cmap('jet'), interpolation='none')
+        # Меняем местами указатели на массивы (новое состояние -> F_device)
+        F_device, F_tmp_device = F_tmp_device, F_device
 
-    # Визуализируем барьер полупрозрачным серым цветом
-    bImageArray = np.zeros((Height, Width, 4), np.uint8)
-    bImageArray[barrier[4],3] = 100  # альфа-канал (прозрачность) для барьера
-    barrierImage = plt.imshow(bImageArray, origin='lower', interpolation='none')
+    # Ждем завершения всех CUDA-ядрер, чтобы корректно измерить время
+    cuda.synchronize()
+    frame_dt = time.time() - t0
+    print(f"GPU frame: {frame_dt:.6f} s for {STEPS_PER_FRAME} steps ({frame_dt/STEPS_PER_FRAME:.6e} s/step)")
 
+    # Копируем распределение на хост только один раз на кадр
+    F_host = F_device.copy_to_host()
 
-    def nextFrame(_):
-        """
-        Функция обновления кадра анимации.
-        Вызывается автоматически для каждого нового кадра.
-        """
-        
-        # Делаем 40 временных шагов между кадрами (для ускорения визуализации)
-        for _ in range(40):
-            iter(F, F_out, barrier)
+    # Вычисляем текущие макроскопические поля на CPU
+    Rho = Mode0(F_host)
+    Ux_loc, Uy_loc = Mode1(F_host)
+    Ux_loc /= Rho
+    Uy_loc /= Rho
 
-        # Вычисляем текущие макроскопические поля
-        Rho = Mode0(F)
-        Ux, Uy = Mode1(F)
+    # Обновляем изображение завихренности
+    fluidImage.set_array(curl(Ux_loc, Uy_loc))
+    return (fluidImage, barrierImage)
 
-        # E = Mode2(F)  # Тензор напряжений (не используется в данной визуализации)
-        Ux /= Rho
-        Uy /= Rho
+# Создаем и сохраняем анимацию
+anim = matplotlib.animation.FuncAnimation(
+    fig,
+    nextFrame,
+    frames=NUM_FRAMES,
+    interval=30,  # задержка между кадрами в мс
+    blit=True     # blitting ускоряет отрисовку
+)
 
-        # Обновляем изображение завихренности
-        fluidImage.set_array(curl(Ux, Uy))
-        return (fluidImage, barrierImage)        
+plt.show()
 
-    # Создаем анимацию
-    animate = matplotlib.animation.FuncAnimation(fig, nextFrame, interval=1, blit=True)
-    plt.show()
+# from IPython.display import HTML
+# HTML(anim.to_html5_video())
 
-
-
-if __name__ == '__main__':
-    main()
 
