@@ -29,6 +29,7 @@ def mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter, z0):
 
         divergence_step[mask & (np.abs(z) > 2)] = i
         mask = mask & (np.abs(z) < 2)
+        pass
 
     return divergence_step
 

@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>КОРОВАНЫ — Джва Года Ждал!</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a12;
+            --bg-medium: #1a1a2e;
+            --accent-gold: #ffd700;
+            --accent-red: #ff4444;
+            --accent-green: #44ff44;
+            --accent-blue: #4488ff;
+            --elf-color: #22cc55;
+            --palace-color: #4488ff;
+            --evil-color: #cc2255;
+            --neutral-color: #ccaa44;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-dark);
+            font-family: 'Press Start 2P', monospace;
+            color: #fff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Scanline effect */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.1),
+                rgba(0, 0, 0, 0.1) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            background: 
+                radial-gradient(ellipse at center, rgba(100, 50, 150, 0.2) 0%, transparent 70%),
+                linear-gradient(180deg, #0a0a12 0%, #1a1a2e 100%);
+        }
+
+        h1 {
+            color: var(--accent-gold);
+            text-shadow: 
+                0 0 10px var(--accent-gold),
+                4px 4px 0 #000;
+            font-size: 28px;
+            margin-bottom: 10px;
+            text-align: center;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { text-shadow: 0 0 10px var(--accent-gold), 4px 4px 0 #000; }
+            to { text-shadow: 0 0 20px var(--accent-gold), 0 0 30px var(--accent-gold), 4px 4px 0 #000; }
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 10px;
+            margin-bottom: 20px;
+        }
+
+        #canvas {
+            border: 4px solid var(--accent-gold);
+            box-shadow: 
+                0 0 20px rgba(255, 215, 0, 0.3),
+                inset 0 0 50px rgba(0, 0, 0, 0.5);
+            image-rendering: pixelated;
+            cursor: crosshair;
+        }
+
+        #ui-panel {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid var(--accent-gold);
+            padding: 10px 15px;
+            font-size: 10px;
+        }
+
+        .stat-label {
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            color: var(--accent-gold);
+        }
+
+        .health-bar {
+            width: 150px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #555;
+            position: relative;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-red), #ff8844);
+            transition: width 0.3s;
+        }
+
+        #faction-select {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .faction-btn {
+            width: 280px;
+            padding: 15px 20px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 11px;
+            border: 3px solid;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .faction-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .faction-btn:hover::before {
+            left: 100%;
+        }
+
+        .faction-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px currentColor;
+        }
+
+        .faction-elf {
+            background: rgba(34, 204, 85, 0.2);
+            border-color: var(--elf-color);
+            color: var(--elf-color);
+        }
+
+        .faction-palace {
+            background: rgba(68, 136, 255, 0.2);
+            border-color: var(--palace-color);
+            color: var(--palace-color);
+        }
+
+        .faction-evil {
+            background: rgba(204, 34, 85, 0.2);
+            border-color: var(--evil-color);
+            color: var(--evil-color);
+        }
+
+        .faction-icon {
+            font-size: 20px;
+            margin-right: 10px;
+        }
+
+        .faction-desc {
+            display: block;
+            font-size: 8px;
+            margin-top: 8px;
+            opacity: 0.7;
+        }
+
+        #controls-hint {
+            margin-top: 15px;
+            font-size: 8px;
+            color: #666;
+            text-align: center;
+        }
+
+        #injury-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--accent-red);
+            padding: 10px;
+            font-size: 8px;
+        }
+
+        .injury-item {
+            color: var(--accent-red);
+            margin: 5px 0;
+        }
+
+        .injury-item.healed {
+            color: var(--accent-green);
+            text-decoration: line-through;
+        }
+
+        #message-log {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #444;
+            padding: 10px;
+            font-size: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-korovan {
+            color: var(--accent-gold);
+        }
+
+        .log-battle {
+            color: var(--accent-red);
+        }
+
+        .log-heal {
+            color: var(--accent-green);
+        }
+
+        #shop-panel {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 10, 20, 0.95);
+            border: 4px solid var(--accent-gold);
+            padding: 20px;
+            z-index: 100;
+            min-width: 350px;
+        }
+
+        .shop-title {
+            color: var(--accent-gold);
+            font-size: 14px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .shop-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #444;
+        }
+
+        .shop-item:hover {
+            background: rgba(255, 215, 0, 0.1);
+        }
+
+        .buy-btn {
+            padding: 5px 10px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 8px;
+            background: var(--accent-gold);
+            color: #000;
+            border: none;
+            cursor: pointer;
+        }
+
+        .buy-btn:hover {
+            background: #fff;
+        }
+
+        .buy-btn:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        #minimap {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--accent-gold);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Injury visual effects */
+        .one-eye {
+            clip-path: polygon(50% 0%, 100% 0%, 100% 100%, 50% 100%);
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .shaking {
+            animation: shake 0.1s linear 3;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>🗡️ КОРОВАНЫ 🗡️</h1>
+        <p class="subtitle">Джва года ждал эту игру!</p>
+        
+        <div id="faction-select">
+            <button class="faction-btn faction-elf" onclick="startGame('elf')">
+                <span class="faction-icon">🧝</span>ЛЕСНЫЕ ЭЛЬФЫ
+                <span class="faction-desc">Густой лес, деревянные домики. Набигаем и нагибаем! Можно грабить корованы...</span>
+            </button>
+            <button class="faction-btn faction-palace" onclick="startGame('palace')">
+                <span class="faction-icon">⚔️</span>ОХРАНА ДВОРЦА
+                <span class="faction-desc">Слушайся командира! Защищай дворец от злого и шпионов эльфов!</span>
+            </button>
+            <button class="faction-btn faction-evil" onclick="startGame('evil')">
+                <span class="faction-icon">💀</span>ЗЛОДЕЙ
+                <span class="faction-desc">Ты сам себе командир! Старый форт в горах, приказывай войскам атаковать дворец!</span>
+            </button>
+        </div>
+
+        <canvas id="canvas" class="hidden" width="900" height="600"></canvas>
+        
+        <div id="ui-panel" class="hidden">
+            <div class="stat-box">
+                <div class="stat-label">ЗОЛОТО</div>
+                <div class="stat-value" id="gold">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">ЗДОРОВЬЕ</div>
+                <div class="health-bar">
+                    <div class="health-fill" id="health-bar" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">ФРАКЦИЯ</div>
+                <div class="stat-value" id="faction-display">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">ЗОНА</div>
+                <div class="stat-value" id="zone-display">-</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">КОРОВАНОВ ОГРАБЛЕНО</div>
+                <div class="stat-value" id="korovans">0</div>
+            </div>
+        </div>
+
+        <div id="controls-hint" class="hidden">
+            [WASD/Стрелки] - Движение | [ПРОБЕЛ] - Прыжок | [E] - Взаимодействие | [Q] - Магазин | [F] - Атака
+        </div>
+    </div>
+
+    <div id="injury-panel" class="hidden">
+        <div style="color: #888; margin-bottom: 8px;">⚠️ РАНЕНИЯ:</div>
+        <div id="injuries-list"></div>
+    </div>
+
+    <div id="message-log" class="hidden">
+        <div style="color: #888; margin-bottom: 8px;">📜 СОБЫТИЯ:</div>
+        <div id="log-entries"></div>
+    </div>
+
+    <canvas id="minimap" class="hidden"></canvas>
+
+    <div id="shop-panel">
+        <div class="shop-title">🏪 ЛАВКА</div>
+        <div id="shop-items"></div>
+        <button class="buy-btn" style="width: 100%; margin-top: 15px;" onclick="closeShop()">ЗАКРЫТЬ [Q]</button>
+    </div>
+
+    <script>
+        // ============ GAME STATE ============
+        const game = {
+            running: false,
+            faction: null,
+            player: null,
+            entities: [],
+            korovans: [],
+            projectiles: [],
+            gold: 50,
+            korovansRobbed: 0,
+            injuries: {
+                leftArm: false,
+                rightArm: false,
+                leftEye: false,
+                rightEye: false,
+                leftLeg: false,
+                rightLeg: false
+            },
+            prosthetics: {
+                leftArm: false,
+                rightArm: false,
+                leftLeg: false,
+                rightLeg: false
+            },
+            currentZone: 0,
+            shopOpen: false,
+            keys: {},
+            lastKorovanSpawn: 0,
+            gameTime: 0
+        };
+
+        // Zone definitions (4 zones as per the legendary request)
+        const ZONES = [
+            { name: "Земли людей", color: "#ccaa44", baseColor: "#8b7355", type: "neutral" },
+            { name: "Зона Императора", color: "#4488ff", baseColor: "#445566", type: "palace" },
+            { name: "Лес эльфов", color: "#22cc55", baseColor: "#2d4a2d", type: "elf" },
+            { name: "Горы Злодея", color: "#cc2255", baseColor: "#4a3030", type: "evil" }
+        ];
+
+        const ZONE_BOUNDS = [
+            { x: 0, y: 0, w: 450, h: 300 },      // Neutral - top left
+            { x: 450, y: 0, w: 450, h: 300 },    // Palace - top right
+            { x: 0, y: 300, w: 450, h: 300 },    // Elf forest - bottom left
+            { x: 450, y: 300, w: 450, h: 300 }   // Evil mountains - bottom right
+        ];
+
+        // Shop items
+        const SHOP_ITEMS = [
+            { id: "heal", name: "🧪 Зелье лечения", price: 30, desc: "+50 HP" },
+            { id: "prosthetic_arm", name: "🦾 Протез руки", price: 100, desc: "Восстанавливает руку" },
+            { id: "prosthetic_leg", name: "🦿 Протез ноги", price: 100, desc: "Можно снова ходить нормально!" },
+            { id: "sword", name: "⚔️ Меч +1", price: 150, desc: "Больше урона" },
+            { id: "armor", name: "🛡️ Броня", price: 200, desc: "Меньше урона" }
+        ];
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+
+        // ============ PLAYER CLASS ============
+        class Player {
+            constructor(x, y, faction) {
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.width = 24;
+                this.height = 32;
+                this.faction = faction;
+                this.health = 100;
+                this.maxHealth = 100;
+                this.damage = 15;
+                this.armor = 0;
+                this.jumping = false;
+                this.grounded = true;
+                this.attackCooldown = 0;
+                this.facing = 1; // 1 = right, -1 = left
+            }
+
+            update() {
+                // Movement speed affected by injuries
+                let speed = 3;
+                if (game.injuries.leftLeg || game.injuries.rightLeg) {
+                    if (!game.prosthetics.leftLeg && !game.prosthetics.rightLeg) {
+                        speed = 0.5; // Crawling
+                    } else {
+                        speed = 2;
+                    }
+                }
+
+                // Can't attack without arms (unless prosthetic)
+                const canAttack = (!game.injuries.leftArm || game.prosthetics.leftArm) || 
+                                  (!game.injuries.rightArm || game.prosthetics.rightArm);
+
+                // Movement
+                if (game.keys['KeyA'] || game.keys['ArrowLeft']) {
+                    this.vx = -speed;
+                    this.facing = -1;
+                } else if (game.keys['KeyD'] || game.keys['ArrowRight']) {
+                    this.vx = speed;
+                    this.facing = 1;
+                } else {
+                    this.vx *= 0.8;
+                }
+
+                if (game.keys['KeyW'] || game.keys['ArrowUp']) {
+                    this.vy = -speed;
+                } else if (game.keys['KeyS'] || game.keys['ArrowDown']) {
+                    this.vy = speed;
+                } else {
+                    this.vy *= 0.8;
+                }
+
+                // Jump (mostly cosmetic in top-down but hey, Кирилл wanted it!)
+                if ((game.keys['Space']) && this.grounded) {
+                    this.jumping = true;
+                    this.grounded = false;
+                    setTimeout(() => {
+                        this.jumping = false;
+                        this.grounded = true;
+                    }, 300);
+                }
+
+                // Attack
+                if (game.keys['KeyF'] && canAttack && this.attackCooldown <= 0) {
+                    this.attack();
+                    this.attackCooldown = 30;
+                }
+
+                if (this.attackCooldown > 0) this.attackCooldown--;
+
+                // Apply velocity
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Bounds
+                this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+                this.y = Math.max(0, Math.min(canvas.height - this.height, this.y));
+
+                // Update current zone
+                game.currentZone = this.getCurrentZone();
+            }
+
+            getCurrentZone() {
+                for (let i = 0; i < ZONE_BOUNDS.length; i++) {
+                    const z = ZONE_BOUNDS[i];
+                    if (this.x >= z.x && this.x < z.x + z.w && 
+                        this.y >= z.y && this.y < z.y + z.h) {
+                        return i;
+                    }
+                }
+                return 0;
+            }
+
+            attack() {
+                // Check for nearby enemies
+                const attackRange = 50;
+                
+                // Attack enemies
+                game.entities.forEach(e => {
+                    const dist = Math.hypot(e.x - this.x, e.y - this.y);
+                    if (dist < attackRange && e.faction !== this.faction) {
+                        const dmg = this.damage - e.armor;
+                        e.health -= Math.max(5, dmg);
+                        addLog(`Атаковал ${e.name}! (-${dmg} HP)`, 'battle');
+                        
+                        if (e.health <= 0) {
+                            addLog(`${e.name} повержен!`, 'battle');
+                            game.gold += e.loot || 10;
+                        }
+                    }
+                });
+
+                // Attack korovans for robbery!
+                game.korovans.forEach(k => {
+                    const dist = Math.hypot(k.x - this.x, k.y - this.y);
+                    if (dist < attackRange && !k.robbed) {
+                        k.robbed = true;
+                        const loot = 20 + Math.floor(Math.random() * 50);
+                        game.gold += loot;
+                        game.korovansRobbed++;
+                        addLog(`🎉 ОГРАБИЛ КОРОВАН! +${loot} золота!`, 'korovan');
+                        canvas.classList.add('shaking');
+                        setTimeout(() => canvas.classList.remove('shaking'), 300);
+                    }
+                });
+
+                // Remove dead entities
+                game.entities = game.entities.filter(e => e.health > 0);
+            }
+
+            draw() {
+                ctx.save();
+                
+                const jumpOffset = this.jumping ? -10 : 0;
+                
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.beginPath();
+                ctx.ellipse(this.x + this.width/2, this.y + this.height + 2, 
+                           this.width/2, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Body color based on faction
+                let color;
+                switch(this.faction) {
+                    case 'elf': color = '#22cc55'; break;
+                    case 'palace': color = '#4488ff'; break;
+                    case 'evil': color = '#cc2255'; break;
+                }
+
+                // Body
+                ctx.fillStyle = color;
+                ctx.fillRect(this.x, this.y + jumpOffset, this.width, this.height);
+                
+                // Face
+                ctx.fillStyle = '#ffddbb';
+                ctx.fillRect(this.x + 4, this.y + 4 + jumpOffset, 16, 12);
+                
+                // Eyes (affected by injuries!)
+                ctx.fillStyle = '#000';
+                if (!game.injuries.leftEye) {
+                    ctx.fillRect(this.x + 6, this.y + 8 + jumpOffset, 4, 4);
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(this.x + 6, this.y + 8 + jumpOffset, 4, 4);
+                }
+                ctx.fillStyle = '#000';
+                if (!game.injuries.rightEye) {
+                    ctx.fillRect(this.x + 14, this.y + 8 + jumpOffset, 4, 4);
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(this.x + 14, this.y + 8 + jumpOffset, 4, 4);
+                }
+
+                // Arms (or prosthetics or missing)
+                if (!game.injuries.leftArm || game.prosthetics.leftArm) {
+                    ctx.fillStyle = game.prosthetics.leftArm ? '#888888' : '#ffddbb';
+                    ctx.fillRect(this.x - 6, this.y + 16 + jumpOffset, 6, 12);
+                }
+                if (!game.injuries.rightArm || game.prosthetics.rightArm) {
+                    ctx.fillStyle = game.prosthetics.rightArm ? '#888888' : '#ffddbb';
+                    ctx.fillRect(this.x + this.width, this.y + 16 + jumpOffset, 6, 12);
+                }
+
+                // Legs (or prosthetics)
+                if (!game.injuries.leftLeg || game.prosthetics.leftLeg) {
+                    ctx.fillStyle = game.prosthetics.leftLeg ? '#888888' : '#442200';
+                    ctx.fillRect(this.x + 4, this.y + this.height + jumpOffset, 6, 8);
+                }
+                if (!game.injuries.rightLeg || game.prosthetics.rightLeg) {
+                    ctx.fillStyle = game.prosthetics.rightLeg ? '#888888' : '#442200';
+                    ctx.fillRect(this.x + 14, this.y + this.height + jumpOffset, 6, 8);
+                }
+
+                // Weapon
+                ctx.fillStyle = '#888888';
+                ctx.save();
+                ctx.translate(this.x + this.width/2, this.y + this.height/2 + jumpOffset);
+                ctx.rotate(this.facing === 1 ? 0.3 : Math.PI - 0.3);
+                ctx.fillRect(15, -2, 25, 4);
+                ctx.restore();
+
+                ctx.restore();
+            }
+
+            takeDamage(amount) {
+                const actualDamage = Math.max(1, amount - this.armor);
+                this.health -= actualDamage;
+                
+                // Random injury chance
+                if (Math.random() < 0.15) {
+                    this.inflictRandomInjury();
+                }
+
+                if (this.health <= 0) {
+                    this.die();
+                }
+            }
+
+            inflictRandomInjury() {
+                const injuries = ['leftArm', 'rightArm', 'leftEye', 'rightEye', 'leftLeg', 'rightLeg'];
+                const available = injuries.filter(i => !game.injuries[i]);
+                if (available.length > 0) {
+                    const injury = available[Math.floor(Math.random() * available.length)];
+                    game.injuries[injury] = true;
+                    
+                    const names = {
+                        leftArm: 'Левая рука отрублена!',
+                        rightArm: 'Правая рука отрублена!',
+                        leftEye: 'Левый глаз выколот!',
+                        rightEye: 'Правый глаз выколот!',
+                        leftLeg: 'Левая нога отрублена!',
+                        rightLeg: 'Правая нога отрублена!'
+                    };
+                    addLog(`⚠️ ${names[injury]}`, 'battle');
+                    updateInjuryPanel();
+                }
+            }
+
+            die() {
+                addLog('💀 ВЫ ПОГИБЛИ! Нажмите R для перезапуска.', 'battle');
+                game.running = false;
+            }
+        }
+
+        // ============ ENEMY/NPC CLASS ============
+        class Entity {
+            constructor(x, y, type, faction) {
+                this.x = x;
+                this.y = y;
+                this.width = 24;
+                this.height = 32;
+                this.type = type;
+                this.faction = faction;
+                this.health = 60;
+                this.maxHealth = 60;
+                this.damage = 10;
+                this.armor = 0;
+                this.vx = 0;
+                this.vy = 0;
+                this.aiTimer = 0;
+                this.target = null;
+                this.loot = 15;
+                
+                switch(type) {
+                    case 'soldier':
+                        this.name = 'Солдат дворца';
+                        this.health = 80;
+                        this.damage = 12;
+                        this.armor = 3;
+                        this.loot = 20;
+                        break;
+                    case 'elf_warrior':
+                        this.name = 'Эльф-воин';
+                        this.health = 50;
+                        this.damage = 15;
+                        this.loot = 15;
+                        break;
+                    case 'evil_minion':
+                        this.name = 'Приспешник злодея';
+                        this.health = 70;
+                        this.damage = 14;
+                        this.armor = 2;
+                        this.loot = 25;
+                        break;
+                    case 'villager':
+                        this.name = 'Крестьянин';
+                        this.health = 30;
+                        this.damage = 5;
+                        this.loot = 5;
+                        break;
+                }
+            }
+
+            update() {
+                this.aiTimer++;
+                
+                // Simple AI
+                if (this.aiTimer % 60 === 0) {
+                    // Look for player if enemy faction
+                    if (game.player && this.faction !== game.player.faction) {
+                        const dist = Math.hypot(game.player.x - this.x, game.player.y - this.y);
+                        if (dist < 150) {
+                            this.target = game.player;
+                        } else {
+                            this.target = null;
+                        }
+                    }
+                }
+
+                if (this.target) {
+                    // Move towards target
+                    const dx = this.target.x - this.x;
+                    const dy = this.target.y - this.y;
+                    const dist = Math.hypot(dx, dy);
+                    
+                    if (dist > 30) {
+                        this.vx = (dx / dist) * 1.5;
+                        this.vy = (dy / dist) * 1.5;
+                    } else {
+                        this.vx = 0;
+                        this.vy = 0;
+                        // Attack!
+                        if (this.aiTimer % 45 === 0) {
+                            game.player.takeDamage(this.damage);
+                            addLog(`${this.name} атакует! (-${this.damage} HP)`, 'battle');
+                        }
+                    }
+                } else {
+                    // Patrol randomly
+                    if (this.aiTimer % 120 === 0) {
+                        this.vx = (Math.random() - 0.5) * 2;
+                        this.vy = (Math.random() - 0.5) * 2;
+                    }
+                }
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Stay in bounds
+                this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+                this.y = Math.max(0, Math.min(canvas.height - this.height, this.y));
+            }
+
+            draw() {
+                // Color based on faction
+                let color;
+                switch(this.faction) {
+                    case 'elf': color = '#22cc55'; break;
+                    case 'palace': color = '#4488ff'; break;
+                    case 'evil': color = '#cc2255'; break;
+                    default: color = '#ccaa44';
+                }
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.beginPath();
+                ctx.ellipse(this.x + this.width/2, this.y + this.height + 2, 
+                           this.width/2, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Body
+                ctx.fillStyle = color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // Face
+                ctx.fillStyle = '#ffddbb';
+                ctx.fillRect(this.x + 4, this.y + 4, 16, 12);
+                
+                // Eyes
+                ctx.fillStyle = '#000';
+                ctx.fillRect(this.x + 6, this.y + 8, 4, 4);
+                ctx.fillRect(this.x + 14, this.y + 8, 4, 4);
+
+                // Health bar
+                if (this.health < this.maxHealth) {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(this.x, this.y - 8, this.width, 4);
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillRect(this.x, this.y - 8, this.width * (this.health / this.maxHealth), 4);
+                }
+            }
+        }
+
+        // ============ KOROVAN CLASS ============
+        class Korovan {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 60;
+                this.height = 40;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.robbed = false;
+                this.timer = 0;
+            }
+
+            update() {
+                this.timer++;
+                
+                // Move slowly
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Bounce off edges
+                if (this.x < 0 || this.x > canvas.width - this.width) this.vx *= -1;
+                if (this.y < 0 || this.y > canvas.height - this.height) this.vy *= -1;
+                
+                // Change direction occasionally
+                if (this.timer % 180 === 0) {
+                    this.vx = (Math.random() - 0.5) * 0.5;
+                    this.vy = (Math.random() - 0.5) * 0.5;
+                }
+            }
+
+            draw() {
+                if (this.robbed) return;
+
+                // Cart
+                ctx.fillStyle = '#8b4513';
+                ctx.fillRect(this.x, this.y + 10, this.width, this.height - 10);
+                
+                // Cover
+                ctx.fillStyle = '#f4a460';
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 10);
+                ctx.lineTo(this.x + this.width/2, this.y);
+                ctx.lineTo(this.x + this.width, this.y + 10);
+                ctx.fill();
+                
+                // Wheels
+                ctx.fillStyle = '#4a3000';
+                ctx.beginPath();
+                ctx.arc(this.x + 12, this.y + this.height, 8, 0, Math.PI * 2);
+                ctx.arc(this.x + this.width - 12, this.y + this.height, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Goods indicator
+                ctx.fillStyle = '#ffd700';
+                ctx.font = '16px Arial';
+                ctx.fillText('💰', this.x + this.width/2 - 8, this.y + 30);
+
+                // Label
+                ctx.fillStyle = '#ffd700';
+                ctx.font = '8px "Press Start 2P"';
+                ctx.fillText('КОРОВАН', this.x + 5, this.y - 5);
+            }
+        }
+
+        // ============ DRAW FUNCTIONS ============
+        function drawBackground() {
+            // Draw zones
+            ZONE_BOUNDS.forEach((z, i) => {
+                ctx.fillStyle = ZONES[i].baseColor;
+                ctx.fillRect(z.x, z.y, z.w, z.h);
+                
+                // Zone-specific decorations
+                if (ZONES[i].type === 'elf') {
+                    // Dense forest
+                    for (let t = 0; t < 30; t++) {
+                        const tx = z.x + Math.random() * z.w;
+                        const ty = z.y + Math.random() * z.h;
+                        drawTree(tx, ty);
+                    }
+                } else if (ZONES[i].type === 'palace') {
+                    // Palace structure
+                    ctx.fillStyle = '#5566aa';
+                    ctx.fillRect(z.x + z.w/2 - 60, z.y + z.h/2 - 40, 120, 80);
+                    ctx.fillStyle = '#7788cc';
+                    ctx.beginPath();
+                    ctx.moveTo(z.x + z.w/2 - 70, z.y + z.h/2 - 40);
+                    ctx.lineTo(z.x + z.w/2, z.y + z.h/2 - 80);
+                    ctx.lineTo(z.x + z.w/2 + 70, z.y + z.h/2 - 40);
+                    ctx.fill();
+                } else if (ZONES[i].type === 'evil') {
+                    // Mountains and fort
+                    for (let m = 0; m < 5; m++) {
+                        ctx.fillStyle = '#3a2a2a';
+                        ctx.beginPath();
+                        const mx = z.x + m * 90 + 45;
+                        const my = z.y + z.h;
+                        ctx.moveTo(mx - 50, my);
+                        ctx.lineTo(mx, z.y + 50 + Math.random() * 50);
+                        ctx.lineTo(mx + 50, my);
+                        ctx.fill();
+                    }
+                    // Evil fort
+                    ctx.fillStyle = '#2a1a1a';
+                    ctx.fillRect(z.x + z.w/2 - 40, z.y + z.h - 100, 80, 60);
+                } else if (ZONES[i].type === 'neutral') {
+                    // Houses and roads
+                    for (let h = 0; h < 5; h++) {
+                        const hx = z.x + 50 + h * 80;
+                        const hy = z.y + 100 + (h % 2) * 80;
+                        ctx.fillStyle = '#a08060';
+                        ctx.fillRect(hx, hy, 40, 30);
+                        ctx.fillStyle = '#8b0000';
+                        ctx.beginPath();
+                        ctx.moveTo(hx - 5, hy);
+                        ctx.lineTo(hx + 20, hy - 20);
+                        ctx.lineTo(hx + 45, hy);
+                        ctx.fill();
+                    }
+                }
+
+                // Zone border
+                ctx.strokeStyle = ZONES[i].color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(z.x, z.y, z.w, z.h);
+            });
+        }
+
+        function drawTree(x, y) {
+            // Trunk
+            ctx.fillStyle = '#4a3520';
+            ctx.fillRect(x - 4, y, 8, 15);
+            // Foliage
+            ctx.fillStyle = '#1a6030';
+            ctx.beginPath();
+            ctx.arc(x, y - 5, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#228844';
+            ctx.beginPath();
+            ctx.arc(x, y - 10, 12, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawMinimap() {
+            minimapCtx.fillStyle = '#111';
+            minimapCtx.fillRect(0, 0, 150, 150);
+            
+            // Draw zones
+            ZONE_BOUNDS.forEach((z, i) => {
+                minimapCtx.fillStyle = ZONES[i].color + '44';
+                minimapCtx.fillRect(z.x / 6, z.y / 4, z.w / 6, z.h / 4);
+                minimapCtx.strokeStyle = ZONES[i].color;
+                minimapCtx.strokeRect(z.x / 6, z.y / 4, z.w / 6, z.h / 4);
+            });
+
+            // Draw korovans
+            game.korovans.filter(k => !k.robbed).forEach(k => {
+                minimapCtx.fillStyle = '#ffd700';
+                minimapCtx.fillRect(k.x / 6, k.y / 4, 6, 4);
+            });
+
+            // Draw entities
+            game.entities.forEach(e => {
+                minimapCtx.fillStyle = ZONES.find(z => z.type === e.faction)?.color || '#888';
+                minimapCtx.fillRect(e.x / 6, e.y / 4, 3, 3);
+            });
+
+            // Draw player
+            if (game.player) {
+                minimapCtx.fillStyle = '#fff';
+                minimapCtx.fillRect(game.player.x / 6, game.player.y / 4, 4, 4);
+            }
+        }
+
+        // ============ UI FUNCTIONS ============
+        function updateUI() {
+            document.getElementById('gold').textContent = game.gold;
+            document.getElementById('korovans').textContent = game.korovansRobbed;
+            document.getElementById('zone-display').textContent = ZONES[game.currentZone].name;
+            
+            if (game.player) {
+                const healthPercent = (game.player.health / game.player.maxHealth) * 100;
+                document.getElementById('health-bar').style.width = healthPercent + '%';
+            }
+
+            const factionNames = {
+                'elf': '🧝 Эльфы',
+                'palace': '⚔️ Дворец',
+                'evil': '💀 Злодей'
+            };
+            document.getElementById('faction-display').textContent = factionNames[game.faction];
+
+            // Visual effect for one eye
+            if (game.injuries.leftEye && game.injuries.rightEye) {
+                canvas.style.opacity = '0.3';
+            } else if (game.injuries.leftEye || game.injuries.rightEye) {
+                canvas.style.opacity = '0.7';
+            } else {
+                canvas.style.opacity = '1';
+            }
+        }
+
+        function updateInjuryPanel() {
+            const panel = document.getElementById('injuries-list');
+            let html = '';
+            
+            const injuryNames = {
+                leftArm: 'Левая рука',
+                rightArm: 'Правая рука', 
+                leftEye: 'Левый глаз',
+                rightEye: 'Правый глаз',
+                leftLeg: 'Левая нога',
+                rightLeg: 'Правая нога'
+            };
+
+            for (const [key, value] of Object.entries(game.injuries)) {
+                if (value) {
+                    const healed = game.prosthetics[key];
+                    html += `<div class="injury-item ${healed ? 'healed' : ''}">${injuryNames[key]} ${healed ? '(протез)' : ''}</div>`;
+                }
+            }
+
+            panel.innerHTML = html || '<div style="color:#666">Нет ранений</div>';
+            
+            // Show panel if any injuries
+            const hasInjuries = Object.values(game.injuries).some(v => v);
+            document.getElementById('injury-panel').classList.toggle('hidden', !hasInjuries);
+        }
+
+        function addLog(message, type) {
+            const log = document.getElementById('log-entries');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = message;
+            log.insertBefore(entry, log.firstChild);
+            
+            // Keep only last 20 entries
+            while (log.children.length > 20) {
+                log.removeChild(log.lastChild);
+            }
+        }
+
+        // ============ SHOP ============
+        function openShop() {
+            game.shopOpen = true;
+            const panel = document.getElementById('shop-panel');
+            const itemsDiv = document.getElementById('shop-items');
+            
+            let html = '';
+            SHOP_ITEMS.forEach(item => {
+                const canBuy = game.gold >= item.price;
+                let available = true;
+                
+                // Check if prosthetic is needed
+                if (item.id === 'prosthetic_arm') {
+                    available = (game.injuries.leftArm && !game.prosthetics.leftArm) || 
+                               (game.injuries.rightArm && !game.prosthetics.rightArm);
+                }
+                if (item.id === 'prosthetic_leg') {
+                    available = (game.injuries.leftLeg && !game.prosthetics.leftLeg) || 
+                               (game.injuries.rightLeg && !game.prosthetics.rightLeg);
+                }
+
+                html += `
+                    <div class="shop-item">
+                        <div>
+                            <div>${item.name}</div>
+                            <div style="font-size: 7px; color: #888;">${item.desc}</div>
+                        </div>
+                        <button class="buy-btn" ${!canBuy || !available ? 'disabled' : ''} 
+                                onclick="buyItem('${item.id}', ${item.price})">
+                            ${item.price}💰
+                        </button>
+                    </div>
+                `;
+            });
+            
+            itemsDiv.innerHTML = html;
+            panel.style.display = 'block';
+        }
+
+        function closeShop() {
+            game.shopOpen = false;
+            document.getElementById('shop-panel').style.display = 'none';
+        }
+
+        function buyItem(id, price) {
+            if (game.gold < price) return;
+            
+            game.gold -= price;
+            
+            switch(id) {
+                case 'heal':
+                    game.player.health = Math.min(game.player.maxHealth, game.player.health + 50);
+                    addLog('🧪 Выпил зелье лечения (+50 HP)', 'heal');
+                    break;
+                case 'prosthetic_arm':
+                    if (game.injuries.leftArm && !game.prosthetics.leftArm) {
+                        game.prosthetics.leftArm = true;
+                    } else if (game.injuries.rightArm && !game.prosthetics.rightArm) {
+                        game.prosthetics.rightArm = true;
+                    }
+                    addLog('🦾 Установлен протез руки!', 'heal');
+                    updateInjuryPanel();
+                    break;
+                case 'prosthetic_leg':
+                    if (game.injuries.leftLeg && !game.prosthetics.leftLeg) {
+                        game.prosthetics.leftLeg = true;
+                    } else if (game.injuries.rightLeg && !game.prosthetics.rightLeg) {
+                        game.prosthetics.rightLeg = true;
+                    }
+                    addLog('🦿 Установлен протез ноги!', 'heal');
+                    updateInjuryPanel();
+                    break;
+                case 'sword':
+                    game.player.damage += 5;
+                    addLog('⚔️ Новый меч! (+5 урона)', 'heal');
+                    break;
+                case 'armor':
+                    game.player.armor += 5;
+                    addLog('🛡️ Новая броня! (+5 защиты)', 'heal');
+                    break;
+            }
+            
+            updateUI();
+            openShop(); // Refresh shop
+        }
+
+        // ============ GAME FUNCTIONS ============
+        function spawnEntities() {
+            // Spawn enemies in each zone
+            // Palace guards
+            for (let i = 0; i < 5; i++) {
+                const z = ZONE_BOUNDS[1];
+                game.entities.push(new Entity(
+                    z.x + 50 + Math.random() * (z.w - 100),
+                    z.y + 50 + Math.random() * (z.h - 100),
+                    'soldier', 'palace'
+                ));
+            }
+
+            // Elf warriors
+            for (let i = 0; i < 5; i++) {
+                const z = ZONE_BOUNDS[2];
+                game.entities.push(new Entity(
+                    z.x + 50 + Math.random() * (z.w - 100),
+                    z.y + 50 + Math.random() * (z.h - 100),
+                    'elf_warrior', 'elf'
+                ));
+            }
+
+            // Evil minions
+            for (let i = 0; i < 5; i++) {
+                const z = ZONE_BOUNDS[3];
+                game.entities.push(new Entity(
+                    z.x + 50 + Math.random() * (z.w - 100),
+                    z.y + 50 + Math.random() * (z.h - 100),
+                    'evil_minion', 'evil'
+                ));
+            }
+
+            // Neutral villagers
+            for (let i = 0; i < 3; i++) {
+                const z = ZONE_BOUNDS[0];
+                game.entities.push(new Entity(
+                    z.x + 50 + Math.random() * (z.w - 100),
+                    z.y + 50 + Math.random() * (z.h - 100),
+                    'villager', 'neutral'
+                ));
+            }
+        }
+
+        function spawnKorovan() {
+            // Spawn korovan at random edge
+            const edge = Math.floor(Math.random() * 4);
+            let x, y;
+            switch(edge) {
+                case 0: x = 0; y = Math.random() * canvas.height; break;
+                case 1: x = canvas.width - 60; y = Math.random() * canvas.height; break;
+                case 2: x = Math.random() * canvas.width; y = 0; break;
+                case 3: x = Math.random() * canvas.width; y = canvas.height - 40; break;
+            }
+            game.korovans.push(new Korovan(x, y));
+            addLog('🚗 Новый корован появился на карте!', 'korovan');
+        }
+
+        function startGame(faction) {
+            game.faction = faction;
+            game.running = true;
+            game.gold = 50;
+            game.korovansRobbed = 0;
+            game.injuries = { leftArm: false, rightArm: false, leftEye: false, rightEye: false, leftLeg: false, rightLeg: false };
+            game.prosthetics = { leftArm: false, rightArm: false, leftLeg: false, rightLeg: false };
+            game.entities = [];
+            game.korovans = [];
+            game.gameTime = 0;
+
+            // Starting position based on faction
+            let startX, startY;
+            switch(faction) {
+                case 'elf':
+                    startX = ZONE_BOUNDS[2].x + ZONE_BOUNDS[2].w / 2;
+                    startY = ZONE_BOUNDS[2].y + ZONE_BOUNDS[2].h / 2;
+                    break;
+                case 'palace':
+                    startX = ZONE_BOUNDS[1].x + ZONE_BOUNDS[1].w / 2;
+                    startY = ZONE_BOUNDS[1].y + ZONE_BOUNDS[1].h / 2;
+                    break;
+                case 'evil':
+                    startX = ZONE_BOUNDS[3].x + ZONE_BOUNDS[3].w / 2;
+                    startY = ZONE_BOUNDS[3].y + ZONE_BOUNDS[3].h / 2;
+                    break;
+            }
+
+            game.player = new Player(startX, startY, faction);
+            
+            spawnEntities();
+            spawnKorovan();
+            spawnKorovan();
+
+            // Show game UI
+            document.getElementById('faction-select').classList.add('hidden');
+            document.getElementById('canvas').classList.remove('hidden');
+            document.getElementById('ui-panel').classList.remove('hidden');
+            document.getElementById('controls-hint').classList.remove('hidden');
+            document.getElementById('message-log').classList.remove('hidden');
+            document.getElementById('minimap').classList.remove('hidden');
+            
+            updateUI();
+            updateInjuryPanel();
+
+            addLog(`Добро пожаловать, ${faction === 'elf' ? 'эльф' : faction === 'palace' ? 'страж' : 'злодей'}!`, 'heal');
+            addLog('Можно грабить корованы!', 'korovan');
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function gameLoop() {
+            if (!game.running) return;
+
+            game.gameTime++;
+
+            // Spawn korovans periodically
+            if (game.gameTime - game.lastKorovanSpawn > 600) { // Every 10 seconds at 60fps
+                spawnKorovan();
+                game.lastKorovanSpawn = game.gameTime;
+            }
+
+            // Respawn entities if too few
+            if (game.entities.length < 10 && game.gameTime % 300 === 0) {
+                spawnEntities();
+            }
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background
+            drawBackground();
+
+            // Update and draw korovans
+            game.korovans.forEach(k => {
+                k.update();
+                k.draw();
+            });
+
+            // Remove old robbed korovans
+            game.korovans = game.korovans.filter(k => !k.robbed || k.timer < 180);
+
+            // Update and draw entities
+            game.entities.forEach(e => {
+                e.update();
+                e.draw();
+            });
+
+            // Update and draw player
+            game.player.update();
+            game.player.draw();
+
+            // Draw minimap
+            drawMinimap();
+
+            // Update UI
+            updateUI();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ============ INPUT HANDLING ============
+        document.addEventListener('keydown', (e) => {
+            game.keys[e.code] = true;
+            
+            // Shop toggle
+            if (e.code === 'KeyQ') {
+                if (game.shopOpen) {
+                    closeShop();
+                } else if (game.running) {
+                    openShop();
+                }
+            }
+
+            // Restart
+            if (e.code === 'KeyR' && !game.running && game.player) {
+                location.reload();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            game.keys[e.code] = false;
+        });
+
+        // Initial setup
+        closeShop();
+        console.log('🗡️ КОРОВАНЫ - Игра загружена! Джва года ждал!');
+    </script>
+</body>
+</html>
+

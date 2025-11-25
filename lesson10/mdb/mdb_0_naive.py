@@ -2,7 +2,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-width, height = 1920*2, 1080*2
+width, height = 1920, 1080
 max_iter = 128
 
 x_min, x_max = -2.2, 1
@@ -48,10 +48,10 @@ now = time.time()
 image = mandelbrot(x_min, x_max, y_min, y_max, width, height, max_iter, z0)
 print(time.time() - now)
 
-plt.imshow(image, cmap='hot', extent=(x_min, x_max, y_min, y_max))
-plt.colorbar(label="Iters before devergence")
-plt.title("Mandelbrot fractal")
-plt.xlabel("Re")
-plt.ylabel("Im")
-plt.show()
+# plt.imshow(image, cmap='hot', extent=(x_min, x_max, y_min, y_max))
+# plt.colorbar(label="Iters before devergence")
+# plt.title("Mandelbrot fractal")
+# plt.xlabel("Re")
+# plt.ylabel("Im")
+# plt.show()
 

@@ -13,7 +13,7 @@ z0 = complex(0, 0)
 @numba.njit
 def mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter, z0):
     divergence_step = []
-
+    
     for y in range(height):
         row = []
         divergence_step.append(row)

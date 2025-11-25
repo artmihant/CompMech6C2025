@@ -30,7 +30,7 @@ def mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter, z0):
     real = np.linspace(xmin, xmax, width)
     imag = np.linspace(ymin, ymax, height)
     real, imag = np.meshgrid(real, imag)
-    # c = real + 1j * imag
+    c = real + 1j * imag
     
     divergence_step = calc_iter(real, imag, z0, max_iter)
 
@@ -41,10 +41,10 @@ now = time.time()
 image = mandelbrot(x_min, x_max, y_min, y_max, width, height, max_iter, z0)
 print(time.time() - now)
 
-# plt.imshow(image, cmap='hot', extent=(x_min, x_max, y_min, y_max))
-# plt.colorbar(label="Iters before devergence")
-# plt.title("Mandelbrot fractal")
-# plt.xlabel("Re")
-# plt.ylabel("Im")
-# plt.show()
+plt.imshow(image, cmap='hot', extent=(x_min, x_max, y_min, y_max))
+plt.colorbar(label="Iters before devergence")
+plt.title("Mandelbrot fractal")
+plt.xlabel("Re")
+plt.ylabel("Im")
+plt.show()
 
