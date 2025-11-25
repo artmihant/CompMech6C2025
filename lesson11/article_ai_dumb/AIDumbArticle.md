@@ -1,29 +1,3 @@
-[Humorous illustrated robot mascot named catbotю
-
-DESIGN:
-- A small, friendly robot with rounded white and light gray body panels, an expressive LED face on a dark screen, glowing blue eyes, flexible segmented arms, and a slightly clumsy but charming demeanor.
-
-- Cat ears and a feline expression on the faceplate.
-- A faceplate with a cat-like muzzle and large, expressive oval LED eyes that can display emotions (joy, confusion, anxiety, thoughtfulness).
-- Short arms with three-fingered, mitten-like hands.
-- Primary color: matte white with soft neon backlighting that changes color depending on the robot's mood.
-- A holographic symbol displays above the robot's head, reflecting the robot's emotions.
-
-STYLE:
-- Kawaii style combined with a tech aesthetic
-- Pixar-level appeal and expressiveness
-- Clean, simple forms without unnecessary detail
-- Friendly and approachable, slightly awkward appearance
-Keep the proportions: head is about 40% of the height, compact torso, massive feet, antenna with a tiny blinking light.
-Humorous tone: light, expressive, exaggerated poses.
-
-IMAGE VIEW:
-- Front view, side view, back view, 3/4 view
-- 3-4 examples of facial expressions (joy, confusion, disappointment, moment of insight)
-- Clean white background
-- Uniform lighting from the top left
-- No background elements, full focus on the character
-]
 
 # 7 причин, почему ваш ИИ тупит (и как это исправить)
 
@@ -213,3 +187,31 @@ GPT-4o/Grok Code хорош для быстрых задач. Claude — для 
 ---
 
 *P.S. Если после всего этого ИИ всё ещё тупит — возможно, пора отдохнуть. Обоим.*
+
+
+[Humorous illustrated robot mascot named catbot.
+
+DESIGN:
+- A small, friendly robot with rounded white and light gray body panels, an expressive LED face on a dark screen, glowing blue eyes, flexible segmented arms, and a slightly clumsy but charming demeanor.
+
+- Cat ears and a feline expression on the faceplate.
+- A faceplate with a cat-like muzzle and large, expressive oval LED eyes that can display emotions (joy, confusion, anxiety, thoughtfulness).
+- Short arms with three-fingered, mitten-like hands.
+- Primary color: matte white with soft neon backlighting that changes color depending on the robot's mood.
+- A holographic symbol displays above the robot's head, reflecting the robot's emotions.
+
+STYLE:
+- Kawaii style combined with a tech aesthetic
+- Pixar-level appeal and expressiveness
+- Clean, simple forms without unnecessary detail
+- Friendly and approachable, slightly awkward appearance
+Keep the proportions: head is about 40% of the height, compact torso, massive feet, antenna with a tiny blinking light.
+Humorous tone: light, expressive, exaggerated poses.
+
+IMAGE VIEW:
+- Front view, side view, back view, 3/4 view
+- 3-4 examples of facial expressions (joy, confusion, disappointment, moment of insight)
+- Clean white background
+- Uniform lighting from the top left
+- No background elements, full focus on the character
+]
