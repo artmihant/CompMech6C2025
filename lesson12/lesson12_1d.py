@@ -1,22 +1,21 @@
-""" # Занятие 12. Physics-Informed Neural Networks (PINN) # """
+""" # Занятие 12. PINN для стационарных задач (ОДУ) # """
 
 r"""
-На этом занятии мы рассмотрим принципиально иной подход к решению дифференциальных уравнений.
-Вместо дискретизации области (как в FDM или FEM) и сведения задачи к системе линейных уравнений,
-мы будем аппроксимировать искомую функцию $u(x,t)$ с помощью нейронной сети.
+На этом занятии мы применим метод PINN для решения стационарного уравнения Бюргерса.
+Это нелинейное обыкновенное дифференциальное уравнение (ОДУ), которое описывает структуру ударной волны.
+Мы переходим от 1D+Time к чистому 1D, чтобы сосредоточиться на сходимости к точному аналитическому решению.
 
-### Основная идея PINN:
-Мы ищем решение в виде параметрической функции $u_{\theta}(x,t)$ (нейросети с весами $\theta$).
-Мы формулируем задачу как **задачу оптимизации**: найти такие $\theta$, которые минимизируют невязку уравнения и ошибку на границах.
+### Уравнение:
+$$ u \frac{du}{dx} - \nu \frac{d^2u}{dx^2} = 0, \quad x \in [-1, 1] $$
 
-$$ Loss = Loss_{data} + Loss_{physics} $$
+### Граничные условия:
+$$ u(-1) = 1, \quad u(1) = -1 $$
 
-Где:
-- $Loss_{data} = ||u_{\theta}(x_{bc}, t_{bc}) - u_{exact}||^2$ (Граничные/Начальные условия)
-- $Loss_{physics} = ||\frac{\partial u_{\theta}}{\partial t} + u_{\theta}\frac{\partial u_{\theta}}{\partial x} - \nu \frac{\partial^2 u_{\theta}}{\partial x^2}||^2$ (Невязка дифференциального уравнения)
+### Аналитическое решение:
+Известно точное решение этой краевой задачи:
+$$ u(x) = -\tanh\left(\frac{x}{2\nu}\right) $$
 
-В качестве примера решим уравнение Бюргерса:
-$$ u_t + u u_x - \nu u_{xx} = 0 $$
+Это идеальный полигон ("дрозофила") для PINN: мы знаем ответ, уравнение нелинейное, есть параметр $\nu$, отвечающий за крутизну фронта.
 """
 
 import torch
@@ -25,296 +24,181 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-# Выбираем устройство (GPU значительно ускорит обучение)
+# Выбираем устройство
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Фиксируем seed для воспроизводимости результатов
 torch.manual_seed(42)
 np.random.seed(42)
 
-print(f"Вычисления будут производиться на: {device}")
+print(f"Вычисления на: {device}")
 
 
-""" ## 1. Архитектура Нейросети (Аппроксиматор) ## """
-
-r"""
-Нейросеть здесь выступает в роли универсального аппроксиматора.
-Мы используем **MLP (Multi-Layer Perceptron)** — полносвязную сеть.
-
-С математической точки зрения, один слой сети выполняет операцию:
-$$ y = \sigma(W x + b) $$
-где $W$ — матрица весов, $b$ — вектор смещения, $\sigma$ — нелинейная функция активации.
-
-Вся сеть — это композиция таких функций:
-$$ u_{\theta}(x,t) = L_n(\dots \sigma(L_1([x,t])) \dots) $$
-
-**Почему Tanh?**
-Для решения дифференциальных уравнений нам нужна гладкая функция. ReLU (популярная в CV) имеет разрыв второй производной в нуле, что плохо для уравнений второго порядка. Tanh ($th(x)$) бесконечно дифференцируема.
-"""
+""" ## 1. Нейросеть (Аппроксиматор) ## """
 
 class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
-        # Входной слой: 2 нейрона (координата x, время t)
-        # Скрытые слои: 4 слоя по 64 нейрона (достаточно для аппроксимации гладких решений)
-        # Выходной слой: 1 нейрон (значение u)
+        # Вход: 1 нейрон (координата x)
+        # Выход: 1 нейрон (значение u)
+        # Для этой задачи достаточно небольшой сети
         self.net = nn.Sequential(
-            nn.Linear(2, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
+            nn.Linear(1, 64), nn.Tanh(),
             nn.Linear(64, 64), nn.Tanh(),
             nn.Linear(64, 1)
         )
         
         # Инициализация весов
-        # Используем инициализацию Ксавье (Glorot).
-        # Смысл: сохранять дисперсию сигналов при прохождении через слои.
-        # Если веса слишком малы -> сигнал затухает (vanishing gradients).
-        # Если велики -> сигнал растет (exploding gradients).
         for m in self.net.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight)
-                nn.init.constant_(m.bias, 0)
 
-    def forward(self, x, t):
-        """
-        Прямой проход (Forward pass).
-        Вычисление значения функции u(x,t) для заданных координат.
-        """
-        # Объединяем x и t в один тензор [N, 2]
-        inputs = torch.cat([x, t], dim=1)
-        return self.net(inputs)
+    def forward(self, x):
+        return self.net(x)
 
 
-""" ## 2. Физика (Автоматическое дифференцирование) ## """
+""" ## 2. Физика (Physics Loss) ## """
 
-r"""
-Это "сердце" метода PINN. Нам нужно вычислить производные $u_t, u_x, u_{xx}$ для подстановки в уравнение.
-
-**В отличие от:**
-1. **Численного дифференцирования (FDM):** Мы не используем сетку и разностные схемы (нет ошибки аппроксимации $\Delta x$).
-2. **Символьного дифференцирования (Mathematica/SymPy):** Мы не строим гигантские формулы.
-
-Мы используем **Autograd (Automatic Differentiation)**. Это алгоритмическое применение цепного правила (Chain Rule) дифференцирования. Поскольку нейросеть — это просто граф вычислений, мы можем точно вычислить градиент выхода по входу.
-"""
-
-def physics_loss(model, x, t, nu):
+def physics_loss(model, x, nu):
     """
-    Вычисляет среднеквадратичную невязку уравнения Бюргерса.
-    Residual = u_t + u*u_x - nu*u_xx
+    Невязка уравнения: u * u' - nu * u'' = 0
     """
-    # Сообщаем PyTorch, что нам потребуются производные по этим переменным
     x.requires_grad = True
-    t.requires_grad = True
     
-    # 1. Вычисляем значение функции u(x,t)
-    u = model(x, t)
+    u = model(x)
     
-    # 2. Вычисляем первые производные (градиенты)
-    # grad_outputs=torch.ones_like(u) — технический момент для скалярного градиента
-    # create_graph=True — важно! Мы будем дифференцировать эти производные еще раз (для u_xx)
-    u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
-    u_t = torch.autograd.grad(u, t, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    # Первая производная u_x
+    u_x = torch.autograd.grad(u, x, torch.ones_like(u), create_graph=True)[0]
     
-    # 3. Вычисляем вторую производную
-    u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
+    # Вторая производная u_xx
+    u_xx = torch.autograd.grad(u_x, x, torch.ones_like(u_x), create_graph=True)[0]
     
-    # 4. Собираем уравнение (Невязка)
-    # Если u - точное решение, то f должно быть равно 0
-    f = u_t + u * u_x - nu * u_xx
+    # Невязка
+    residual = u * u_x - nu * u_xx
     
-    # Возвращаем MSE (Mean Squared Error) невязки
-    return torch.mean(f ** 2)
+    return torch.mean(residual ** 2)
 
 
-""" ## 3. Подготовка данных (Collocation Points) ## """
+""" ## 3. Генерация данных ## """
 
-r"""
-PINN не требует структурированной сетки.
-Мы обучаем сеть на двух наборах точек:
-1. **Boundary Points**: Точки на границе области, где мы *знаем* решение (из начальных/граничных условий).
-2. **Collocation Points**: Случайные точки внутри области, где мы требуем выполнения *физического закона* (уравнения).
-"""
-
-def generate_data(num_boundary, num_collocation):
-    """Генерация обучающей выборки"""
+def generate_data(n_bnd, n_col):
+    """
+    n_bnd: число точек на границах
+    n_col: число точек коллокации внутри интервала
+    """
     
-    # --- 1. Граничные и Начальные условия (Data Loss) ---
-    # Область: x ∈ [-1, 1], t ∈ [0, 1]
+    # 1. Граничные точки (Boundary Points)
+    # Левая граница: x = -1, u = 1
+    x_left = -1.0 * torch.ones(n_bnd // 2, 1)
+    u_left =  1.0 * torch.ones(n_bnd // 2, 1)
     
-    # Начальное условие: t = 0, u = -sin(pi*x)
-    x_ic = np.random.uniform(-1, 1, num_boundary).reshape(-1, 1)
-    t_ic = np.zeros_like(x_ic)
-    u_ic = -np.sin(np.pi * x_ic) 
+    # Правая граница: x = 1, u = -1
+    x_right = 1.0 * torch.ones(n_bnd // 2, 1)
+    u_right = -1.0 * torch.ones(n_bnd // 2, 1)
     
-    # Граничное условие: x = -1, u = 0
-    t_bc1 = np.random.uniform(0, 1, num_boundary // 2).reshape(-1, 1)
-    x_bc1 = -1 * np.ones_like(t_bc1)
-    u_bc1 = np.zeros_like(t_bc1)
+    X_bnd = torch.cat([x_left, x_right])
+    U_bnd = torch.cat([u_left, u_right])
     
-    # Граничное условие: x = 1, u = 0
-    t_bc2 = np.random.uniform(0, 1, num_boundary // 2).reshape(-1, 1)
-    x_bc2 = np.ones_like(t_bc2)
-    u_bc2 = np.zeros_like(t_bc2)
+    # 2. Точки коллокации (Collocation Points)
+    # Случайные точки в интервале [-1, 1]
+    X_col = (torch.rand(n_col, 1) * 2.0 - 1.0)
     
-    # Объединяем все точки, где значение u известно
-    X_u_train = np.vstack([x_ic, x_bc1, x_bc2])
-    T_u_train = np.vstack([t_ic, t_bc1, t_bc2])
-    U_u_train = np.vstack([u_ic, u_bc1, u_bc2])
-    
-    # --- 2. Точки коллокации (Physics Loss) ---
-    # Точки внутри области, где мы минимизируем невязку уравнения
-    X_f_train = np.random.uniform(-1, 1, num_collocation).reshape(-1, 1)
-    T_f_train = np.random.uniform(0, 1, num_collocation).reshape(-1, 1)
-    
-    # Переводим в тензоры PyTorch и отправляем на устройство
-    return (torch.tensor(X_u_train, dtype=torch.float32).to(device),
-            torch.tensor(T_u_train, dtype=torch.float32).to(device),
-            torch.tensor(U_u_train, dtype=torch.float32).to(device),
-            torch.tensor(X_f_train, dtype=torch.float32).to(device),
-            torch.tensor(T_f_train, dtype=torch.float32).to(device))
+    return X_bnd.to(device), U_bnd.to(device), X_col.to(device)
 
 
-""" ## 4. Процесс обучения (Оптимизация) ## """
+""" ## 4. Обучение ## """
 
-r"""
-Обучение нейросети — это итеративный процесс минимизации функции потерь.
-Мы используем оптимизатор **Adam**.
-
-Для математика Adam — это продвинутый метод градиентного спуска.
-Классический градиентный спуск: $\theta_{k+1} = \theta_k - \alpha \nabla L(\theta_k)$.
-Adam добавляет:
-1. **Момент (Momentum)**: накапливает "инерцию" движения, что помогает проходить локальные минимумы и плоские участки.
-2. **Адаптивность (Adaptive Rate)**: индивидуально подстраивает шаг обучения для каждого параметра (веса), основываясь на истории градиентов.
-"""
-
-def train_model():
-    # Параметры задачи
-    NU = 0.01 / np.pi  # Вязкость
-    EPOCHS = 3000      # Количество итераций оптимизации
-    LR = 0.005         # Скорость обучения (Learning Rate)
+def train():
+    # Параметры
+    NU = 0.05       # Вязкость (чем меньше, тем круче ступенька)
+    EPOCHS = 5000   # Количество итераций
+    LR = 0.001      # Learning Rate
     
-    # Инициализация модели и оптимизатора
     model = PINN().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     
-    # Генерация данных
-    x_u, t_u, u_true, x_f, t_f = generate_data(num_boundary=500, num_collocation=5000)
+    # Генерируем данные один раз (хотя можно и обновлять каждую эпоху)
+    x_bnd, u_bnd, x_col = generate_data(n_bnd=100, n_col=2000)
     
-    print(f"Начинаем обучение PINN на {EPOCHS} эпох...")
-    print(f"Точек данных: {len(x_u)}, Точек коллокации: {len(x_f)}")
-    
+    history = []
     start_time = time.time()
-    loss_history = []
+    
+    print(f"Обучение: Nu={NU}, Epochs={EPOCHS}")
     
     for epoch in range(EPOCHS):
-        # Обнуляем градиенты с предыдущего шага
         optimizer.zero_grad()
         
-        # 1. Data Loss: насколько предсказание совпадает с известными граничными условиями
-        u_pred = model(x_u, t_u)
-        loss_u = torch.mean((u_pred - u_true) ** 2)
+        # 1. Ошибка на границах (Data Loss)
+        u_pred_bnd = model(x_bnd)
+        loss_bnd = torch.mean((u_pred_bnd - u_bnd)**2)
         
-        # 2. Physics Loss: насколько решение удовлетворяет уравнению Бюргерса
-        loss_f = physics_loss(model, x_f, t_f, NU)
+        # 2. Ошибка уравнения (Physics Loss)
+        loss_phys = physics_loss(model, x_col, NU)
         
-        # Суммарная ошибка (можно добавить весовые коэффициенты)
-        loss = loss_u + loss_f
+        # Суммарная ошибка
+        # Иногда полезно добавить веса: loss = 10*loss_bnd + loss_phys
+        loss = loss_bnd + loss_phys
         
-        # Вычисляем градиенты (Backpropagation)
         loss.backward()
-        
-        # Делаем шаг оптимизации (обновляем веса)
         optimizer.step()
         
-        loss_history.append(loss.item())
+        history.append(loss.item())
         
         if epoch % 500 == 0:
-            print(f"Epoch {epoch}: Loss = {loss.item():.6f} (Data: {loss_u.item():.6f}, Phys: {loss_f.item():.6f})")
+            print(f"Epoch {epoch:04d}: Loss={loss.item():.6f} (Bnd={loss_bnd.item():.6f}, Phys={loss_phys.item():.6f})")
             
-    print(f"Обучение завершено за {time.time() - start_time:.1f} сек.")
-    return model, loss_history
+    print(f"Время обучения: {time.time() - start_time:.2f} сек")
+    return model, history, NU
 
-# Запуск обучения
-trained_model, history = train_model()
+trained_model, loss_history, NU = train()
 
 
-""" ## 5. Визуализация результатов ## """
+""" ## 5. Визуализация ## """
 
-def visualize_results(model, loss_history):
-    """Построение графиков сходимости и решений"""
+def visualize(model, history, nu):
+    # 1. График Loss
+    plt.figure(figsize=(12, 5))
     
-    plt.figure(figsize=(14, 5))
-    
-    # 1. График сходимости (Loss)
     plt.subplot(1, 2, 1)
-    plt.plot(loss_history, 'k-')
+    plt.plot(history)
     plt.yscale('log')
-    plt.title('Сходимость функции потерь (Loss)')
-    plt.xlabel('Эпохи обучения')
-    plt.ylabel('MSE Loss (log scale)')
-    plt.grid(True, which="both", ls="-")
+    plt.title('Сходимость обучения')
+    plt.xlabel('Эпоха')
+    plt.ylabel('Loss')
+    plt.grid(True)
     
-    # 2. Цветовая карта решения u(x,t)
+    # 2. Сравнение решения
     plt.subplot(1, 2, 2)
     
-    # Создаем плотную сетку для визуализации
-    x_plot = np.linspace(-1, 1, 200)
-    t_plot = np.linspace(0, 1, 100)
-    X, T = np.meshgrid(x_plot, t_plot)
+    # Сетка для графика
+    x_np = np.linspace(-1, 1, 200)
+    x_torch = torch.tensor(x_np.reshape(-1, 1), dtype=torch.float32).to(device)
     
-    # Переводим сетку в тензоры
-    X_tens = torch.tensor(X.flatten()[:, None], dtype=torch.float32).to(device)
-    T_tens = torch.tensor(T.flatten()[:, None], dtype=torch.float32).to(device)
-    
-    # Получаем предсказание модели (выключаем расчет градиентов для ускорения)
+    # Предсказание нейросети
     with torch.no_grad():
-        U_pred = model(X_tens, T_tens).cpu().numpy().reshape(T.shape)
+        u_pred = model(x_torch).cpu().numpy()
+        
+    # Аналитическое решение
+    # u = -tanh(x / 2nu)
+    u_exact = -np.tanh(x_np / (2 * nu))
     
-    cp = plt.contourf(T, X, U_pred, 100, cmap='jet')
-    plt.colorbar(cp, label='u(x,t)')
-    plt.title('Решение PINN: Уравнение Бюргерса')
-    plt.xlabel('t (время)')
-    plt.ylabel('x (координата)')
+    plt.plot(x_np, u_exact, 'k--', linewidth=2, label='Exact Solution')
+    plt.plot(x_np, u_pred, 'r-', linewidth=2, alpha=0.8, label='PINN Prediction')
+    
+    plt.title(f'Стационарный Бюргерс (nu={nu})')
+    plt.xlabel('x')
+    plt.ylabel('u(x)')
+    plt.legend()
+    plt.grid(True)
     
     plt.tight_layout()
     plt.show()
     
-    # 3. Срезы решения в разные моменты времени
-    plt.figure(figsize=(10, 6))
-    t_snapshots = [0.0, 0.25, 0.5, 0.75]
-    
-    x_tens_slice = torch.tensor(x_plot[:, None], dtype=torch.float32).to(device)
-    
-    for t_val in t_snapshots:
-        t_tens_slice = torch.ones_like(x_tens_slice) * t_val
-        with torch.no_grad():
-            u_slice = model(x_tens_slice, t_tens_slice).cpu().numpy()
-        
-        plt.plot(x_plot, u_slice, label=f't = {t_val}', linewidth=2)
-    
-    plt.title('Профили ударной волны в разные моменты времени')
+    # График ошибки
+    plt.figure(figsize=(6, 4))
+    plt.plot(x_np, np.abs(u_exact - u_pred.flatten()), 'b-')
+    plt.title('Абсолютная ошибка решения')
     plt.xlabel('x')
-    plt.ylabel('u(x,t)')
+    plt.yscale('log')
     plt.grid(True)
-    plt.legend()
     plt.show()
 
-# Визуализация
-visualize_results(trained_model, history)
-
-
-""" ## Выводы ## """
-
-r"""
-Мы реализовали Physics-Informed Neural Network для решения нелинейного уравнения Бюргерса.
-
-### Преимущества подхода:
-1. **Отсутствие сетки**: Решение получено в аналитическом виде (как нейросеть), его можно вычислить в любой точке $(x,t)$ без интерполяции.
-2. **Простота реализации**: Код занимает менее 200 строк и не требует реализации сложных разностных схем (Flux limiters, Riemann solvers).
-3. **Автоматическое дифференцирование**: Позволяет легко менять уравнение (например, добавить член реакции или дисперсии), просто изменив одну строку в `physics_loss`.
-
-### Недостатки:
-1. **Время обучения**: Обучение нейросети (3000 эпох) обычно дольше, чем прогон классического солвера для простых задач 1D/2D.
-2. **Сходимость**: Процесс оптимизации нелинейный и может застрять в локальном минимуме (требуется настройка гиперпараметров: learning rate, архитектуры сети).
-"""
+visualize(trained_model, loss_history, NU)
