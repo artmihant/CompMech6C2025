@@ -32,7 +32,6 @@ np.random.seed(42)
 
 print(f"Device: {device}")
 
-
 """ ## 1. Геометрия: Шестеренка (Gear) ## """
 
 r"""
@@ -51,7 +50,7 @@ def is_inside_gear(x, y):
     phi = np.arctan2(y, x)
     
     # Параметрическая граница
-    r_boundary = 1.0 + 0.2 * np.sin(8 * phi)
+    r_boundary = 1.0 + 0.2 * np.sin(7 * phi)
     
     # Точка внутри, если её радиус меньше радиуса границы
     return r < r_boundary
@@ -76,21 +75,19 @@ def generate_gear_points(n_points):
         
     return np.array(points[:n_points])
 
-
 def get_boundary_points(n_points):
     """Генерация точек строго на границе"""
     phi = np.random.uniform(0, 2*np.pi, n_points)
-    r = 1.0 + 0.2 * np.sin(8 * phi)
+    r = 1.0 + 0.2 * np.sin(7 * phi)
     x = r * np.cos(phi)
     y = r * np.sin(phi)
     return np.column_stack([x, y])
 
 # 1. Точки внутри области (Collocation points) для уравнения
-XY_collocation = generate_gear_points(6000)
+XY_collocation = generate_gear_points(5000)
 
 x_col = torch.tensor(XY_collocation[:, 0:1], dtype=torch.float32).to(device)
 y_col = torch.tensor(XY_collocation[:, 1:2], dtype=torch.float32).to(device)
-
 
 # 2. Точки на границе (Boundary points) для граничных условий
 XY_boundary = get_boundary_points(1000)
@@ -98,27 +95,25 @@ XY_boundary = get_boundary_points(1000)
 x_bnd = torch.tensor(XY_boundary[:, 0:1], dtype=torch.float32).to(device)
 y_bnd = torch.tensor(XY_boundary[:, 1:2], dtype=torch.float32).to(device)
 
-
 """ ## Визуализация облака точек ## """
 
 import matplotlib.pyplot as plt
 
-plt.figure(figsize=(7, 7))
-plt.scatter(XY_collocation[:, 0], XY_collocation[:, 1], s=7, color='dodgerblue', alpha=0.7, label='Collocation (внутри)')
-plt.scatter(XY_boundary[:, 0], XY_boundary[:, 1], s=14, color='orangered', alpha=0.9, label='Boundary (граница)')
+
+# Рисуем точки коллокации, чтобы показать "бессеточность"
+plt.figure(figsize=(6, 6))
+plt.scatter(XY_collocation[:,0], XY_collocation[:,1], s=1, alpha=0.5, label='Collocation')
+plt.scatter(XY_boundary[:,0], XY_boundary[:,1], s=2, c='r', label='Boundary')
+plt.title("Облако точек для обучения (Mesh-free)")
 plt.axis('equal')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.title('Точки: внутри области и на границе')
 plt.legend()
 plt.show()
-
 
 """ ## 2. Точное решение (Method of Manufactured Solutions) ## """
 
 r"""
-Чтобы проверить точность метода, мы пойдем от обратного.
-Зададим "истинное" решение:
+Чтобы проверить точность метода, мы будем использовать аналитическое решение
+
 $$ u_{exact} = \sin(3x) \cdot \cos(3y) $$
 
 Тогда, подставив его в уравнение Пуассона $-\Delta u = f$, найдем правую часть $f$:
@@ -132,36 +127,21 @@ $$ -\Delta u = 18 \sin(3x)\cos(3y) $$
 """
 
 def exact_u(x, y):
+    """Точное решение (универсальная функция: работает и с Tensor, и с NumPy)"""
+    if torch.is_tensor(x):
+        return torch.sin(3*x) * torch.cos(3*y)
     return np.sin(3*x) * np.cos(3*y)
 
-def source_f(x, y):
-    # f(x,y) для уравнения -Laplace(u) = f
-    return 18 * np.sin(3*x) * np.cos(3*y)
+# Значения u на границе (берем из точного решения)
+# Теперь u_bnd_true будет тензором, что правильно для обучения
+u_bnd_true = exact_u(x_bnd, y_bnd)
 
+def source_f(x, y):
+    # f(x,y) для уравнения Laplace(u) + f = 0
+    # Здесь используем только torch, так как эта функция вызывается внутри loss с градиентами
+    return 18 * torch.sin(3*x) * torch.cos(3*y)
 
 """ ## 3. Нейросеть и Физика ## """
-
-class PINN_2D(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Вход: 2 координаты (x, y)
-        # Выход: 1 температура (u)
-        self.net = nn.Sequential(
-            nn.Linear(2, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
-            nn.Linear(64, 1)
-        )
-        
-        # Xavier initialization
-        for m in self.net.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-
-    def forward(self, x, y):
-        # Конкатенация координат
-        inputs = torch.cat([x, y], dim=1)
-        return self.net(inputs)
 
 def poisson_loss(model, x, y):
     """
@@ -189,23 +169,41 @@ def poisson_loss(model, x, y):
     
     return torch.mean((lhs - rhs)**2)
 
+class PINN_2D(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Вход: 2 координаты (x, y)
+        # Выход: 1 температура (u)
+        self.net = nn.Sequential(
+            nn.Linear(2, 64), nn.Tanh(),
+            nn.Linear(64, 64), nn.Tanh(),
+            nn.Linear(64, 64), nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+        
+        # Xavier initialization
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+
+    def forward(self, x, y):
+        # Конкатенация координат
+        inputs = torch.cat([x, y], dim=1)
+        return self.net(inputs)
 
 """ ## 4. Подготовка данных и Обучение ## """
-
-
-
-# Значения u на границе (берем из точного решения)
-u_bnd_true = exact_u(x_bnd, y_bnd) # Здесь мы не используем .detach(), так как это константы
 
 # Модель
 model = PINN_2D().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+EPOCHS = 5001
+
 print("Начинаем обучение...")
 start = time.time()
 history = []
 
-for epoch in range(5001):
+for epoch in range(EPOCHS):
     optimizer.zero_grad()
     
     # Loss на границе (BC)
@@ -228,6 +226,13 @@ for epoch in range(5001):
 
 print(f"Время обучения: {time.time() - start:.2f} сек")
 
+plt.figure(figsize=(6, 4))
+plt.plot(history[:1000])
+plt.xlabel('Эпоха')
+plt.ylabel('Loss')
+plt.title('График history: обучение PINN')
+plt.grid(True)
+plt.show()
 
 """ ## 5. Визуализация ## """
 
@@ -280,13 +285,4 @@ plt.title("Абсолютная ошибка")
 plt.axis('equal')
 
 plt.tight_layout()
-plt.show()
-
-# Рисуем точки коллокации, чтобы показать "бессеточность"
-plt.figure(figsize=(6, 6))
-plt.scatter(XY_collocation[:,0], XY_collocation[:,1], s=1, alpha=0.5, label='Collocation')
-plt.scatter(XY_boundary[:,0], XY_boundary[:,1], s=2, c='r', label='Boundary')
-plt.title("Облако точек для обучения (Mesh-free)")
-plt.axis('equal')
-plt.legend()
 plt.show()
