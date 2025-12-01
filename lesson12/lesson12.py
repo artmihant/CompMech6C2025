@@ -22,6 +22,8 @@ class PINN(nn.Module):
         # Вход: 2 нейрона (x, t)
         # Скрытые слои: 4 слоя по 64 нейронов
         # Выход: 1 нейрон (u)
+
+        # ?? Какие ещё типичные слои и конструкции существуют ?? #
         self.net = nn.Sequential(
             nn.Linear(2, 64), nn.Tanh(),
             nn.Linear(64, 64), nn.Tanh(),
@@ -30,13 +32,15 @@ class PINN(nn.Module):
             nn.Linear(64, 1)
         )
         
-        # # Инициализация весов (Xavier) для лучшей сходимости
-        # for m in self.net.modules():
-        #     if isinstance(m, nn.Linear):
-        #         nn.init.xavier_normal_(m.weight)
-        #         nn.init.constant_(m.bias, 0)
+        # Инициализация весов (Xavier) для лучшей сходимости
+        # ?? Какова математика ?? ##
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x, t):
+        # ?? Что такое forward ?? ##
         # Объединяем x и t в один тензор [N, 2]
         inputs = torch.cat([x, t], dim=1)
         return self.net(inputs)
@@ -56,16 +60,16 @@ def physics_loss(model, x, t, nu):
     
     u = model(x, t)
     
-    # Вычисляем производные автоматически (Autograd)
+    # Вычисляем автоградиенты 
     # create_graph=True нужен, чтобы потом взять вторую производную
     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_t = torch.autograd.grad(u, t, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
     
-    # Само уравнение (Residual)
+    # Само уравнение
     f = u_t + u * u_x - nu * u_xx
     
-    return torch.mean(f ** 2) # Возвращаем MSE невязки
+    return torch.mean(f ** 2) # Возвращаем Mean Squared Error невязки
 
 # ==========================================
 # 3. Подготовка данных (Collocation points)
@@ -121,6 +125,8 @@ EPOCHS = 3000      # Количество итераций (для CPU став�
 LR = 0.005         # Learning rate
 
 model = PINN().to(device)
+
+# ?? Что такое оптимизатор ?? #
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
 # Генерируем данные
