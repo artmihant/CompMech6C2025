@@ -361,29 +361,12 @@ def nextFrame(_):
     Функция обновления кадра анимации.
     Вызывается автоматически для каждого нового кадра.
     """
-<<<<<<< HEAD:lesson9/lesson9.py
-    
-    # Инициализация геометрии барьера
-    barrier = InitBarrier()
-
-    # Инициализация функции распределения из равновесного состояния
-    F = F_stat(Ux, Uy, Rho)
-
-    # Фиксированное распределение для граничных условий (постоянный поток)
-    F_out = F_stat(Ux, Uy, Rho)
-
-    # Прогреваем систему: делаем 100 итераций до начала визуализации
-    # Это позволяет потоку установиться и развить вихри Кармана
-    # for _ in range(100):
-    #     iter(F, F_out, barrier)
-=======
     # Измеряем время вычисления одного кадра (STEPS_PER_FRAME итераций)
     t0 = time.time()
     for _ in range(STEPS_PER_FRAME):
         iter(F, F_out, barrier)
     frame_dt = time.time() - t0
     print(f"CPU frame: {frame_dt:.6f} s for {STEPS_PER_FRAME} steps ({frame_dt/STEPS_PER_FRAME:.6e} s/step)")
->>>>>>> a862c81d8b9debcadf57f25c569cc57dcfa2c3f2:lesson9/lesson9_cpu.py
 
     # Вычисляем текущие макроскопические поля
     Rho = Mode0(F)
